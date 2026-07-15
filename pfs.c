@@ -1,15 +1,14 @@
-/* pfs.c -- Translate PFS file names.
-   David Nichols
-   December, 1991 */
-
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
 #include <dirent.h>
-#include "pfs.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-extern char *malloc();
-extern char *getenv();
+extern int atoi(const char *);
+extern void *malloc(long unsigned int);
+extern char *getenv(const char *);
+
+#include "pfs.h"
 
 #define TRUE			1
 #define FALSE			0
@@ -17,11 +16,8 @@ extern char *getenv();
 #define MAXNAMELEN		1024
 
 char *pfs_errorMsg;
+
 static int pfsInited = FALSE;
-static char *FSTranslateName();
-static char *VUXTranslate();
-static char *UXTranslate();
-extern char *vermap_Translate();
 
 struct PrefixEntry {
     struct PrefixEntry *next;
@@ -35,6 +31,7 @@ struct IPE {
     char *name;
     char *translation;
 };
+
 static struct IPE initialPrefixTable[] = {
     "/imagerfonts", "-ux:/project/pcedar2.0/imagerfonts",
     "/release", "/XeroxCedar/release",
@@ -48,15 +45,20 @@ static struct IPE initialPrefixTable[] = {
     "/r", "-vermapa:/Source",
     "/rx", "-vermapx:/Source",
 #endif
-
     NULL, NULL
 };
 
 struct FSEntry {
     char *name;			/* ux, vux, etc. */
     int length;			/* length of name */
-    char *(*translateProc)();	/* routine to translate it */
+    char *(*translateProc)(struct FSEntry *, char *);	/* routine to translate it */
 };
+
+// static char *FSTranslateName();
+static char *VUXTranslate(struct FSEntry *fe, char *name);
+static char *UXTranslate(struct FSEntry *fe, char *name);
+extern char *vermap_Translate(struct FSEntry *fe, char *name);
+
 static struct FSEntry fsTable[] = {
     "ux:", 0, UXTranslate,
     "vux:", 0, VUXTranslate,
@@ -67,153 +69,165 @@ static struct FSEntry fsTable[] = {
     NULL, 0, NULL
 };
 
-
-static char *strsav(s)
-    char *s;
-{
+static char *strsav(char *s) {
     char *p = malloc(strlen(s) + 1);
-
     strcpy(p, s);
     return p;
 }
 
-/*
-   Translate a Cedar name to a Unix name.  Cedar names look like this:
- 	 -fs:/name/name/name
-   The -fs: part controls the interpretation of the rest (see the fsTable
-   above).
+static void InitPFS();
 
-   If the -fs: part is missing, then the name is run repeatedly through a
-   prefix table to replace prefixes of the name with other prefixes.
+/**
+    Translate a Cedar pathname to a Unix pathname.
+    Cedar pathnames look like this:
 
-   If the name doesn't begin with a / or a -, then it's assumed to be a
-   Unix file relative to the current directory and is simply returned.
+             -fs:/name/name/name
+
+    The -fs: part controls the interpretation of the rest (see the fsTable above).
+
+    When the -fs: part is absent, the value is run repeatedly through the prefix table
+    until a fully resolved pathname has been constructed.
+
+    For the case where the resolved pathname doesn't begin with / or -,
+    it's assumed to be a file relative to the current directory.
 */
-char *pfs_TranslateName(name)
-    char *name;
-{
-    char buf[MAXNAMELEN], buf2[MAXNAMELEN];
-    int i, len;
-    struct PrefixEntry *pe;
-    struct FSEntry *fe;
-    char *p;
+char *pfs_TranslateName(char *name) {
+    if (!pfsInited) InitPFS();
 
-    if (!pfsInited)
-	InitPFS();
     pfs_errorMsg = NULL;
-    for (i = 0; i < MAXPREFIXLOOKUPS; ++i) {
-	if (*name == '-') {
-	    p = strchr(name, ':');
-	    if (p == NULL)
-		return strsav(name);	/* not in right form */
-	    for (fe = fsTable; fe->name != NULL; ++fe) {
-		if (strncasecmp(name+1, fe->name, fe->length) == 0)
-		    return fe->translateProc(fe, p+1);
-	    }
-	    return strsav(name);
-	}
-	if (*name != '/')
-	    return strsav(name);
-	/* Need to do prefix map lookups. */
-	strcpy(buf, name);
-	for (pe = prefixes; pe != NULL; pe = pe->next) {
-	    if (strncasecmp(pe->name, buf, pe->length) == 0 &&
-		(pe->length==1 || buf[pe->length] == 0 || buf[pe->length] == '/')) {
-		strcpy(buf2, pe->translation);
-		len = strlen(buf2);
-		if (buf2[len - 1] == '/' && buf[pe->length] == '/')
-		    buf2[--len] = 0;
-		strcpy(buf2 + len, buf + pe->length);
-		name = buf2;
-		break;
-	    }
-	}
-	if (pe == NULL) {
-	    /* Fell off the end of the table; treat this as a Unix name. */
-	    return strsav(buf);
-	}
+
+    char buf[MAXNAMELEN];
+    char buf2[MAXNAMELEN];
+    for (int i = 0; i < MAXPREFIXLOOKUPS; ++i) {
+        if (*name == '-') {
+            char *p = strchr(name, ':');
+            if (p == NULL) {
+                fprintf(stderr, "%s : %s\n", name, "bad form");
+                return strsav(name);	/* not in right form */
+            }
+
+            for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) {
+                if (strncasecmp(name+1, fe->name, fe->length) == 0) {
+                    // printf("%s : trying %s\n", name, fe->name);
+                    return fe->translateProc(fe, p+1);
+                }
+            }
+
+            return strsav(name);
+        }
+
+        if (*name != '/') { return strsav(name); }
+
+        /* Need to do prefix map lookups. */
+
+        strcpy(buf, name);
+
+        struct PrefixEntry *expanded = NULL;
+        for (struct PrefixEntry *pe = prefixes; pe != NULL; pe = pe->next) {
+            // printf("prefix map expansion loop : %s\n", pe->name);
+            if ((strncasecmp(pe->name, buf, pe->length) == 0)
+            && (
+                (pe->length == 1)
+                || (buf[pe->length] == 0)
+                || (buf[pe->length] == '/')
+                )
+            ) {
+                strcpy(buf2, pe->translation);
+                int len = strlen(buf2);
+                if (buf2[len - 1] == '/' && buf[pe->length] == '/') buf2[--len] = 0;
+                strcpy(buf2 + len, buf + pe->length);
+                name = buf2;
+                expanded = pe;
+                // printf("prefix map match : %s\n", expanded->name);
+                break;
+            }
+        }
+
+        if (expanded == NULL) { return strsav(buf); } // other more to match
+
+        /* Fell off the end of the table; treat this as a relative name. */
     }
+
     pfs_errorMsg = "Too many prefix map substitutions.";
     return NULL;
 }
 
-static void InsertPE(newpe)
-     struct PrefixEntry *newpe;
-{
-    struct PrefixEntry *pe;
+static void InsertPE(struct PrefixEntry *newpe) {
+    struct PrefixEntry *pe = prefixes;
     struct PrefixEntry **lag = &prefixes;
     
-    for (pe=prefixes, lag=&prefixes; pe != NULL; lag=&(pe->next), pe=pe->next) {
-	if (newpe->length >= pe->length) {
-	    newpe->next = pe;
-	    *lag = newpe;
-	    return;
-	}
+    for ( ; pe != NULL; lag=&(pe->next), pe=pe->next) {
+        if (newpe->length >= pe->length) {
+            newpe->next = pe;
+            *lag = newpe;
+            return;
+        }
     }
     *lag = newpe;
 }
 
-static InitPFS()
-{
-    struct FSEntry *fe;
-    struct IPE *ipe;
-    struct PrefixEntry *pe;
-    char *home, buf[1024];
-    char command[1024], name[1024], translation[1024];
-    char *xeroxCedar;
-    FILE *f;
+static void DumpPrefixMap() {
+    for (struct PrefixEntry *pe = prefixes; pe != NULL; pe=pe->next) {
+        printf("%s(%d) %s\n", pe->name, pe->length, pe->translation);
+    }
+}
 
-    for (fe = fsTable; fe->name != NULL; ++fe)
-	fe->length = strlen(fe->name);
-    for (ipe = initialPrefixTable; ipe->name != NULL; ++ipe) {
-	pe = (struct PrefixEntry *) malloc(sizeof(*pe));
-	pe->name = ipe->name;
-	pe->length = strlen(ipe->name);
-	pe->translation = ipe->translation;
-	pe->next = NULL;
+static void InitPFS() {
+    for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) fe->length = strlen(fe->name);
+
+    for (struct IPE *ipe = initialPrefixTable; ipe->name != NULL; ++ipe) {
+        struct PrefixEntry *pe = (struct PrefixEntry *) malloc(sizeof(*pe));
+        pe->name = ipe->name;
+        pe->length = strlen(ipe->name);
+        pe->translation = ipe->translation;
+        pe->next = NULL;
         InsertPE(pe);
     }
-    xeroxCedar = getenv("XeroxCedar");
+
+    char *xeroxCedar = getenv("XeroxCedar");
     if (xeroxCedar != NULL) {
-        pe = (struct PrefixEntry *) malloc(sizeof(*pe));
+        struct PrefixEntry *pe = (struct PrefixEntry *) malloc(sizeof(*pe));
         pe->name = strsav("/XeroxCedar");
         pe->length = strlen(pe->name);
         pe->translation = strsav(xeroxCedar);
         pe->next = NULL;
         InsertPE(pe);
     }
-    home = getenv("HOME");
+
+    char *home = getenv("HOME");
     if (home != NULL) {
-	sprintf(buf, "%s/.cedar.pma", home);
-	f = fopen(buf, "r");
-	if (f != NULL) {
-	    while (fgets(buf, sizeof(buf), f) != NULL) {
-		if (sscanf(buf, "%s %s %s", command, name, translation) != 3
-		    || strcmp(command, "pma") != 0)
-		    continue;
-		pe = (struct PrefixEntry *) malloc(sizeof(*pe));
-		pe->name = strsav(name);
-		pe->length = strlen(name);
-		pe->translation = strsav(translation);
-		pe->next = NULL;
-		InsertPE(pe);
-	    }
-	    fclose(f);
-	}
+        char buf[1024];
+        sprintf(buf, "%s/.cedar.pma", home);
+        FILE *f = fopen(buf, "r");
+        if (f != NULL) {
+            while (fgets(buf, sizeof(buf), f) != NULL) {
+                char command[1024];
+                char name[1024];
+                char translation[1024];
+                int count = sscanf(buf, "%s %s %s", command, name, translation);
+
+                if (count  != 3 || strcmp(command, "pma") != 0) continue;
+
+                struct PrefixEntry *pe = (struct PrefixEntry *) malloc(sizeof(*pe));
+                pe->name = strsav(name);
+                pe->length = strlen(name);
+                pe->translation = strsav(translation);
+                pe->next = NULL;
+                InsertPE(pe);
+            }
+            fclose(f);
+        }
     }
+
+    if (0 == 1) DumpPrefixMap(); // DEBUG, should this be a feature ?
     pfsInited = TRUE;
 }
 
-static char *UXTranslate(fe, name)
-    struct FSEntry *fe;
-    char *name;
-    
-{
-    char *saveName;
-    char *bangPos;
-    saveName = strsav(name);
-    if ((bangPos = strrchr(saveName, '!'))!=NULL) {
-	if (bangPos >strrchr(saveName, '/')) *bangPos = 0;
+static char *UXTranslate(struct FSEntry *fe, char *name) {
+    char *saveName = strsav(name);
+    char *bangPos = strrchr(saveName, '!');
+    if (bangPos != NULL) {
+        if (bangPos > strrchr(saveName, '/')) *bangPos = 0;
     }
     return saveName;
 }
@@ -224,132 +238,125 @@ static char *UXTranslate(fe, name)
 #define NONE	(-3)		/* no version number */
 #define UNKNOWN	(-4)		/* not known yet */
 
-/*
-   Deal with VUX version numbers.
+/**
+    Deal with VUX version numbers.
 
-   The -fs: and !version parts are optional.  If -fs: is -ux:, then the
-   name is whatever follows the :.  If it is -vux:, then the name is
-   translated to lower case, and the !version part is interpreted.  !n
-   where n is an integer translates to .~n~, !l and !h (literally)
-   translate to the highest and lowest version numbers, respectively.  If
-   the !version is missing, !h is assumed.  If no versioned files are
-   present, then an unversioned one is used.
+    The -fs: and !version parts are optional.
 
-   If the -fs: is missing, then the file name is run through the prefix map
-   table and prefixes of the filename are substituted.  This can happen
-   more than once.
+    When -fs: is -ux:, the pathname is whatever follows the :.
+    When it is -vux:, the pathname is translated to lower case, and the !version part is interpreted.
 
+    !n where n is an integer translates to .~n~,
+    !l and !h (literally) translate to the highest and lowest version numbers, respectively.
+    When the !version is missing, !h is assumed.
+
+    When no versioned files are present, an unversioned one is used.
+
+    When  -fs: is missing, the pathname is run through the prefix map table
+    and prefixes of the filename are substituted.
+    This can happen more than once.
  */
-static char *VUXTranslate(fe, name)
-    struct FSEntry *fe;
-    char *name;
-{
+static char *VUXTranslate(struct FSEntry *fe, char *name) {
+    /* First convert to lower case. */
     char buf[MAXNAMELEN + 20];
     char *p;
-    char *slash, *bang;
-    int version;
-    int bestVersion;
-    DIR *dir;
-    struct dirent *d;
-    int len;
-
-    /* First convert to lower case. */
-    for (p = buf; *name != 0; ++p, ++name)
-	*p = isupper(*name) ? tolower(*name) : *name;
+    for (p = buf; *name != 0; ++p, ++name) {*p = isupper(*name) ? tolower(*name) : *name; }
     *p = 0;
-    slash = strrchr(buf, '/');
-    bang = strrchr(buf, '!');
-    if (bang == NULL || (slash != NULL && slash > bang)) {
-	/* No version number specified. */
-	version = HIGH;
+
+    int version;
+
+    char *slash = strrchr(buf, '/');
+    char *bang = strrchr(buf, '!');
+    if (bang == NULL || ((slash != NULL) && (slash > bang))) {
+        /* No version number specified. */
+        version = HIGH;
     }
     else {
-	/* Parse version number. */
-	*bang++ = 0;
-	if (*bang == 'h' || *bang == 'H')
-	    version = HIGH;
-	else if (*bang == 'l' || *bang == 'L')
-	    version = LOW;
-	else {
-	    version = atoi(bang);	/* save it */
-	    /* Now make sure it's ok. */
-	    for (p = bang; *p != 0; ++p) {
-		if (!isdigit(*p)) {
-		    pfs_errorMsg = "Bad version number.";
-		    return NULL;
-		}
-	    }
-	}
-    }
-    /* Now we need to find the version.  If it's explicit, we can just invent
-       the name and we're done. */
-    if (version >= 0) {
-	p = buf + strlen(buf);
-	sprintf(p, ".~%d~", version);
-	return strsav(buf);
+        /* Parse version number. */
+        *bang++ = 0;
+        if (*bang == 'h' || *bang == 'H') version = HIGH;
+        else if (*bang == 'l' || *bang == 'L') version = LOW;
+        else {
+            version = atoi(bang);	/* save it */
+            /* Now make sure it's ok. */
+            for (char *p = bang; *p != 0; ++p) {
+                if (!isdigit(*p)) { pfs_errorMsg = "Bad version number."; return NULL; }
+            }
+        }
     }
 
-    /* Ok, we need to scan the directory.  Open it, and leave slash pointing
-       to the component. */
+    /*
+      Now we need to find the version.
+      When it's explicit, we can just invent the name and we're done.
+    */
+    if (version >= 0) {
+        char *p = buf + strlen(buf);
+        sprintf(p, ".~%d~", version);
+        return strsav(buf);
+    }
+
+    /*
+      need to scan the directory
+      Open it, and leave slash pointing to the component.
+    */
+    DIR *dir;
     if (slash == buf) {
-	dir = opendir("/");
-	++slash;
+        dir = opendir("/");
+        ++slash;
     }
     else if (slash == NULL) {
-	dir = opendir(".");
-	slash = buf;
+        dir = opendir(".");
+        slash = buf;
     }
     else {
-	*slash = NULL;
-	dir = opendir(buf);
-	*slash++ = '/';
+        *slash = 0; // NULL;
+        dir = opendir(buf);
+        *slash++ = '/';
     }
-    if (dir == NULL) {
-	pfs_errorMsg = "Can't open directory to find version.";
-	return NULL;
-    }
+
+    if (dir == NULL) { pfs_errorMsg = "Can't open directory to find version."; return NULL; }
+
     /* Do the actual scan. */
-    len = strlen(slash);
-    bestVersion = UNKNOWN;
+    int len = strlen(slash);
+    int bestVersion = UNKNOWN;
+    struct dirent *d;
     while ((d = readdir(dir)) != NULL) {
-	if (strncmp(d->d_name, slash, len) == 0) {
-	    if (d->d_name[len] == 0) {
-		/* A file that matches with no version number. */
-		if (bestVersion == UNKNOWN)
-		    bestVersion = NONE;
-	    }
-	    else if (d->d_name[len] == '.'
-		     && d->d_name[len + 1] == '~'
-		     && d->d_name[d->d_namlen - 1] == '~') {
-		/* A match if the stuff between the ~'s is numeric. */
-		int ok = 1, i, v;
-		for (i = len + 2; i < d->d_namlen - 1; ++i) {
-		    if (!isdigit(d->d_name[i]))
-			ok = 0;
-		}
-		if (ok) {
-		    v = atoi(&d->d_name[len + 2]);
-		    if (version == HIGH) {
-			if (bestVersion < 0 || v > bestVersion)
-			    bestVersion = v;
-		    }
-		    else {
-			if (bestVersion < 0 || v < bestVersion)
-			    bestVersion = v;
-		    }
-		}
-	    }
-	}
+        if (strncmp(d->d_name, slash, len) == 0) {
+            if (d->d_name[len] == 0) {
+                /* A file that matches with no version number. */
+                if (bestVersion == UNKNOWN) bestVersion = NONE;
+            }
+            else if (d->d_name[len] == '.'
+                 && d->d_name[len + 1] == '~'
+                 // && d->d_name[d->d_namlen - 1] == '~'
+                 && d->d_name[_D_EXACT_NAMLEN(d) - 1] == '~'
+            ) {
+                /* A match if the stuff between the ~'s is numeric. */
+                int ok = 1;
+                // for (int i = len + 2; i < d->d_namlen - 1; ++i) {
+                for (int i = len + 2; i < _D_EXACT_NAMLEN(d) - 1; ++i) {
+                    if (!isdigit(d->d_name[i])) ok = 0;
+                }
+
+                if (ok) {
+                    int v = atoi(&d->d_name[len + 2]);
+                    if (version == HIGH) {
+                        if (bestVersion < 0 || v > bestVersion) bestVersion = v;
+                    }
+                    else {
+                        if (bestVersion < 0 || v < bestVersion) bestVersion = v;
+                    }
+                }
+            }
+        }
     }
-    if (bestVersion == UNKNOWN) {
-	pfs_errorMsg = "Can't find valid version.";
-	return NULL;
-    }
-    else if (bestVersion == NONE)
-	return strsav(buf);
-    else {
-	p = buf + strlen(buf);
-	sprintf(p, ".~%d~", bestVersion);
-	return strsav(buf);
+
+    if (bestVersion == UNKNOWN) { pfs_errorMsg = "Can't find valid version."; return NULL; }
+    if (bestVersion == NONE) return strsav(buf);
+
+    {
+        char *p = buf + strlen(buf);
+        sprintf(p, ".~%d~", bestVersion);
+        return strsav(buf);
     }
 }
