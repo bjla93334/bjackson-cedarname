@@ -33,3 +33,12 @@ candidates vying for frontrunning or 'winner' status.
 
 Clearly, 32-bit SPARC and SunOS 4.1.4 have been dead for a while.  Today (2026),
 x86_64 is the clear cpu winner (although there's movement in the direction of ARM).
+
+# Quick test
+
+There's two very obvious things folks will be interested in,
+so let's use them for testing :
+
+    ./cedarname /r/PFS.mesa
+    ./cedarname /r/Rope.mesa
+
