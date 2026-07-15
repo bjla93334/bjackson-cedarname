@@ -1,0 +1,7 @@
+cedarname -- Translate Cedar(PFS) file names into Unix file names.
+Owners: nichols@parc.xerox.com
+Author: David Nichols.
+
+You give it a Cedar file name, and it tells you the real Unix file name.
+It understands versions, prefix maps, and version maps.  See the man page
+for more info.

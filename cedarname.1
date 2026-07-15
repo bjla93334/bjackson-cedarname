@@ -1,0 +1,55 @@
+.\" cedarname
+.TH CEDARNAME 1 "20 December 1991"
+.SH NAME
+cedarname \- Translate a Cedar file name to a Unix file name
+.SH SYNOPSIS
+.B cedarname
+[ filename ... ]
+.SH DESCRIPTION
+.B Cedarname
+translates file names can are valid for the Cedar programming environment
+into the name that Cedar actually uses to store the file in the Unix file
+system.
+.B Cedarname
+properly translates prefix maps, version maps and version numbers.
+.SH PREFIX MAPS
+.B Cedarname
+has a built-in list of prefix map entries, and can read a file of
+additional prefix map entries from a file in the user's home directory.
+This file must be named
+.I .cedar.pma
+and must contain lines of the form
+.nf
+.sp 1
+.RI "    pma " "prefix translation"
+.sp 1
+.fi
+where 
+.I prefix
+is the prefix of the file name to be replaced, and
+.I translation
+is the replacement text.  This is the same form as the
+.B pma
+command in the Cedar commander so that the user can move all his
+prefix map entries to
+.I .cedar.pma
+and replace them in his
+.I .cedar.profile
+with the line
+.nf
+.sp 1
+.RI "    source /tilde/" user "/.cedar.pma"
+.sp 1
+.fi
+Although this file will be read by Cedar, it must be a Unix text file, not
+a Tioga format file.
+.SH EXAMPLES
+.nf
+  % cedarname /r/rope.mesa
+=>
+  /pseudo/pcedar2.0/rope/rope.mesa.~3~
+.fi
+.SH "SEE ALSO"
+Cedar documentation.
+.SH AUTHOR
+David Nichols, Xerox PARC
