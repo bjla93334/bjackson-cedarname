@@ -1,6 +1,16 @@
-CFLAGS=-g
+# gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0
 
-cedarname: cedarname.o pfs.o vermap.o
-	$(CC) $(CFLAGS) -o cedarname cedarname.o pfs.o vermap.o
+CFLAGS = -g
+OBJS = cedarname.o pfs.o vermap.o
 
+cedarname: $(OBJS)
 
+.PHONY: clean
+clean:
+	$(RM) cedarname $(OBJS)
+
+## quick test :
+# setenv XeroxCedar ~/Desktop/CSL-93-16/Cedar
+# ./cedarname /r/Rope.mesa
+
+# eof
