@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pfs.h"
+#include "options.h"
 
 extern void *malloc(long unsigned int);
 
@@ -60,10 +61,11 @@ static void DumpTextFor(struct Map *map, int i, int swap) {
     DumpTextAt(map, start, slen);
 }
 
+// don't think too hard about what 'swap' means
 static void DumpEntry(struct Map *map, int i, int swap) {
-    uint32_t stab = be32toh(map->shortNames[i]); // arg to Compare()
-    struct MapEntry *mep = &(map->entries[i]);
+    uint32_t stab = (swap) ? map->shortNames[i] : be32toh(map->shortNames[i]); // arg to Compare()
 
+    struct MapEntry *mep = &(map->entries[i]);
     uint32_t created = (swap) ? mep->created : be32toh(mep->created);
     uint32_t index = (swap) ? mep->index : be32toh(mep->index); // index into string table
     uint16_t lo = (swap) ? mep->stamp.lo : be16toh(mep->stamp.lo);
@@ -71,11 +73,25 @@ static void DumpEntry(struct Map *map, int i, int swap) {
     uint16_t hi = (swap) ? mep->stamp.hi : be16toh(mep->stamp.hi);
     uint16_t extra = (swap) ? mep->stamp.extra : be16toh(mep->stamp.extra);
 
+    // leap year ??
+    uint64_t utc = (-24*60*60) + (-2*365*24*60*60) + (uint64_t) created;
+    /*
+       'created' is a BasicTime - seconds since 1901 / 1968 ; so wrong unix epoch
+       Alto: 1901 to 2036
+       XNS: 1968 to 2103 (Alto offset to 1968)
+
+        1991-05-13 14:05:58.000000000 -0700 /r/Tioga.tip
+       -2208988800 UTC: Monday, January 1, 1900 at 12:00:00 AM
+       -63158400 UTC: Monday, January 1, 1968 at 12:00:00 AM
+       0 UTC: Thursday, January 1, 1970 at 12:00:00 AM
+    */
+
     // FIXME : perhaps use JSON and have this be a feature ?
     printf(
         " i: %d"
         " \n%08x stab: %d"
         " \n%08x created: %d"
+        " \n%08lx utc: %ld"
         " \n%08x index: %d"
         " \n%04x lo: %d"
         " \n%04x num: %d"
@@ -85,6 +101,7 @@ static void DumpEntry(struct Map *map, int i, int swap) {
         i,
         stab, stab,
         created, created,
+        utc, utc,
         index, index,
         lo, lo,
         num, num,
@@ -308,6 +325,10 @@ static char *vermap_Lookup(struct Map *map, char *name) {
     if (i == -1) { pfs_errorMsg = "Can't find in version map."; return NULL; }
 
     /* Found it. */
+    if (opt_set(OPT_DUMPENTRY)) {
+        DumpEntry(map, i, 1);
+    }
+
     int start = map->entries[i].index;
     int end = map->entries[i + 1].index - 1;
     char buf[1024], buf2[1024];

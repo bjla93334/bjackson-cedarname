@@ -333,7 +333,7 @@ static char *VUXTranslate(struct FSEntry *fe, char *name) {
             ) {
                 /* A match if the stuff between the ~'s is numeric. */
                 int ok = 1;
-                // for (int i = len + 2; i < d->d_namlen - 1; ++i) {
+                // for (int i = len + 2; i < d->d_namlen - 1; ++i)
                 for (int i = len + 2; i < _D_EXACT_NAMLEN(d) - 1; ++i) {
                     if (!isdigit(d->d_name[i])) ok = 0;
                 }
