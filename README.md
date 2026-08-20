@@ -42,6 +42,9 @@ so let's use them for testing :
     ./cedarname /r/PFS.mesa
     ./cedarname /r/Rope.mesa
 
+    ./cedarname --dumpEntry /r/Tioga.tip
+    ./cedarname --dumpIndex
+
 # find this project on github
 
     https://github.com/bjla93334/bjackson-cedarname.git

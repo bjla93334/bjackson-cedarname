@@ -363,6 +363,14 @@ struct FSEntry {
 static char *cedarMapName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
 static struct Map *cedarMap = NULL;
 
+void DumpIndex() {
+    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    for (int i = 0; i < cedarMap->len; i++) {
+        uint32_t name_index = cedarMap->shortNames[i];
+        printf("%d\n", name_index);
+    }
+}
+
 char *vermap_Translate(struct FSEntry *fe, char *name) {
     char *p = strrchr(name, '/');
     if (p == NULL) p = name; else ++p; // skip prefix
