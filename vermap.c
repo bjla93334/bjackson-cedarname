@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
 #include "pfs.h"
 #include "options.h"
 
@@ -41,6 +43,16 @@ struct Map {
     char *names;		/* all the names */
 };
 
+static void fetchCanon(struct Map *map, int i, char *buf) {
+    int start = map->entries[i].index;
+    int end = map->entries[i + 1].index - 1;
+    int nbytes = end - start;
+    // assert(nbytes < 1024);
+    strncpy(buf, map->names + start, nbytes);
+    buf[end - start] = 0;
+}
+
+// FIXME : totally broken!
 // routines that may be useful when the binary format changes
 static void DumpTextAt(struct Map *map, int start, int slen) {
     char *table = map->names;
@@ -59,6 +71,25 @@ static void DumpTextFor(struct Map *map, int i, int swap) {
     int end = (swap) ? be32toh(after->index) : after->index;
     int slen = (end - 1) - start;
     DumpTextAt(map, start, slen);
+}
+
+// time_t epoch_time = 1784419200; (e.g., Tuesday, August 18, 2026)
+static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
+    struct tm utc_time;
+    gmtime_r(&epoch_time, &utc_time);
+    strftime(buffer, buflen, "%Y-%m-%d %H:%M:%S UTC", &utc_time);
+/*
+    // tm_year since 1900
+    // tm_mon 0-11
+    printf("%04d-%02d-%02d %02d:%02d:%02d UTC",
+       utc_time.tm_year + 1900,
+       utc_time.tm_mon + 1,
+       utc_time.tm_mday,
+       utc_time.tm_hour,
+       utc_time.tm_min,
+       utc_time.tm_sec
+    );
+*/
 }
 
 // don't think too hard about what 'swap' means
@@ -85,13 +116,20 @@ static void DumpEntry(struct Map *map, int i, int swap) {
        -63158400 UTC: Monday, January 1, 1968 at 12:00:00 AM
        0 UTC: Thursday, January 1, 1970 at 12:00:00 AM
     */
+    char buffer[80];
+    format_utc(utc, buffer, sizeof(buffer));
+    char *calendar = buffer;
+
+    char canon[1024];
+    fetchCanon(map, i, canon);
 
     // FIXME : perhaps use JSON and have this be a feature ?
     printf(
         " i: %d"
+        " \n canon: %s"
         " \n%08x stab: %d"
         " \n%08x created: %d"
-        " \n%08lx utc: %ld"
+        " \n%08lx utc: %ld (%s)"
         " \n%08x index: %d"
         " \n%04x lo: %d"
         " \n%04x num: %d"
@@ -99,9 +137,10 @@ static void DumpEntry(struct Map *map, int i, int swap) {
         " \n%04x extra: %d"
         "\n",
         i,
+        canon,
         stab, stab,
         created, created,
-        utc, utc,
+        utc, utc, calendar,
         index, index,
         lo, lo,
         num, num,
@@ -329,11 +368,9 @@ static char *vermap_Lookup(struct Map *map, char *name) {
         DumpEntry(map, i, 1);
     }
 
-    int start = map->entries[i].index;
-    int end = map->entries[i + 1].index - 1;
-    char buf[1024], buf2[1024];
-    strncpy(buf, map->names + start, end - start);
-    buf[end - start] = 0;
+    char buf[1024];
+    fetchCanon(map, i, buf);
+    char buf2[1024];
     Slashify(buf2, buf);
     return pfs_TranslateName(buf2);
 }
@@ -375,6 +412,14 @@ void DumpAll(int swap) {
     if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
     for (int i = 0; i < cedarMap->len; i++) {
         DumpEntry(cedarMap, i, swap);
+    }
+}
+
+void DumpSorted(int swap) {
+    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    for (int i = 0; i < cedarMap->len; i++) {
+        uint32_t stab = (swap) ? cedarMap->shortNames[i] : be32toh(cedarMap->shortNames[i]); // arg to Compare()
+        DumpEntry(cedarMap, stab, swap);
     }
 }
 

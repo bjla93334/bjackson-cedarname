@@ -26,3 +26,4 @@ inline bool opt_set(enum flag_t flavor) {
 
 extern void DumpIndex();
 extern void DumpAll(int swap);
+extern void DumpSorted(int swap);

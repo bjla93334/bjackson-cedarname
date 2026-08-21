@@ -54,5 +54,10 @@ int main(int argc, char *argv[]) {
         DumpAll(1);
     }
 
+    if (opt_set(OPT_DUMPSORTED)) {
+	// printf("Map:\n");
+        DumpSorted(1);
+    }
+
     return rc;
 }

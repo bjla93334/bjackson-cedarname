@@ -45,6 +45,7 @@ so let's use them for testing :
     ./cedarname --dumpEntry /r/Tioga.tip
     ./cedarname --dumpIndex
     ./cedarname --dumpAll
+    ./cedarname --dumpSorted
 
 # Implementor Notes
 
