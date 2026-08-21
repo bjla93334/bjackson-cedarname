@@ -45,7 +45,13 @@ int main(int argc, char *argv[]) {
     }
 
     if (opt_set(OPT_DUMPINDEX)) {
+	// printf("Index:\n");
         DumpIndex();
+    }
+
+    if (opt_set(OPT_DUMPALL)) {
+	// printf("Map:\n");
+        DumpAll(1);
     }
 
     return rc;

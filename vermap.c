@@ -371,6 +371,13 @@ void DumpIndex() {
     }
 }
 
+void DumpAll(int swap) {
+    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    for (int i = 0; i < cedarMap->len; i++) {
+        DumpEntry(cedarMap, i, swap);
+    }
+}
+
 char *vermap_Translate(struct FSEntry *fe, char *name) {
     char *p = strrchr(name, '/');
     if (p == NULL) p = name; else ++p; // skip prefix

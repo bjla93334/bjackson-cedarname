@@ -21,7 +21,8 @@ int o_flags = 0; // assumes only a few
 
 __attribute__((always_inline))
 inline bool opt_set(enum flag_t flavor) {
-    return (o_flags && (1 << flavor));
+    return (o_flags & (1 << flavor));
 }
 
 extern void DumpIndex();
+extern void DumpAll(int swap);

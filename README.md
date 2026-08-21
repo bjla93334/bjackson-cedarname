@@ -44,6 +44,12 @@ so let's use them for testing :
 
     ./cedarname --dumpEntry /r/Tioga.tip
     ./cedarname --dumpIndex
+    ./cedarname --dumpAll
+
+# Implementor Notes
+
+    The 'stab' (Index) is NOT paired with the Entry in dumpAll.
+    Don't think too hard about it - just think slice 'i' of independent tables.
 
 # find this project on github
 
