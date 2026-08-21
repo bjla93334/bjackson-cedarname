@@ -52,6 +52,26 @@ so let's use them for testing :
     The 'stab' (Index) is NOT paired with the Entry in dumpAll.
     Don't think too hard about it - just think slice 'i' of independent tables.
 
+    ./cedarname --dumpSorted | egrep 'canon|utc' | less
+
+# DF Syntax
+
+    A DF file is essentially a bill-of-materials and dependency graph tracker.
+    It specifies file names, fully qualified network locations (IFS/Grapevine servers),
+    and specific creation timestamps to guarantee environment consistency.
+
+    Over time, usage has evolved and while the syntax may seem to be human-oriented,
+    in actuality there are 2 distinct cases : tool generated and fuzzy tool-input "templates".
+
+    In order to explore the tool output form, I've roughed out this perl script:
+
+        parse-df.pl
+
+    This can be used as the basis for a model graph generator without the need of existing Cedar utilities.
+    At a minimum this can work for the release CDROM (i.e. Cedar10.1). For older or newer versions,
+    enhancements may be required. It's also intended as an easy to understand illustration for folks
+    who have no prior experience with Cedar.
+
 # find this project on github
 
     https://github.com/bjla93334/bjackson-cedarname.git
