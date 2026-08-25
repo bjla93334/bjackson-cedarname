@@ -72,6 +72,31 @@ so let's use them for testing :
     enhancements may be required. It's also intended as an easy to understand illustration for folks
     who have no prior experience with Cedar.
 
+# Original Definitive Reference for DF's - CSL-82-7, pg 85, Fig 4.3
+
+    I highly recommend reading Eric's thesis.
+
+    Eric Schmidt's thesis
+    Xerox PARC Technical Report, CSL-82-7, December 1982
+    http://www.bitsavers.org/pdf/xerox/parc/techReports/CSL-82-7_Controlling_Large_Software_Development_In_a_Distributed_Environment.pdf
+
+    https://www2.eecs.berkeley.edu/Pubs/TechRpts/1982/7596.html
+
+    @phdthesis{Schmidt:7596,
+        Author= {Schmidt, Eric E.},
+        Title= {Controlling Large Software Development in a Distributed Environment},
+        School= {EECS Department, University of California, Berkeley},
+        Year= {1982},
+    }
+
+    I was unaware of it until just recently (Aug 2026).
+
+    I'm down this Rabbit-Hole getting perspective on how this early work relates to the de-facto use of DF's and the evolutionary path(s) our tooling traveled. My experience is/was clearly very different from the research inrtent of the "System Modeller", as least as things go relative to the editor informing the SM of updates and immediately compiling modules and doing system updates (live module replacement).
+
+    What I can say is that there's a high degree of fidelity between the Early Cedar work, the last Dorado Cedar release, and the early days of Mimosa / PCedar.
+
+    I should probably mention something about MakeDo at this point, but let me hold off on that until I wrap my headed around things a bit more
+
 # find this project on github
 
     https://github.com/bjla93334/bjackson-cedarname.git
