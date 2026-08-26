@@ -126,15 +126,17 @@ static void DumpEntry(struct Map *map, int i, int swap) {
     // FIXME : perhaps use JSON and have this be a feature ?
     printf(
         " i: %d"
-        " \n canon: %s"
-        " \n%08x stab: %d"
-        " \n%08x created: %d"
-        " \n%08lx utc: %ld (%s)"
-        " \n%08x index: %d"
-        " \n%04x lo: %d"
-        " \n%04x num: %d"
-        " \n%04x hi: %d"
-        " \n%04x extra: %d"
+        "\ncanon: %s"
+        "\n%08x stab: %d"
+        "\n%08x created: %d"
+        "\n%08lx utc: %ld (%s)"
+        "\n%08x index: %d"
+"\nstamp:"
+        " %04x%04x"
+        " %04x num: %d"
+        " %04x hi: %d"
+        " %04x lo: %d"
+        " %04x extra: %d"
         "\n",
         i,
         canon,
@@ -142,9 +144,10 @@ static void DumpEntry(struct Map *map, int i, int swap) {
         created, created,
         utc, utc, calendar,
         index, index,
-        lo, lo,
+num, hi,
         num, num,
         hi, hi,
+        lo, lo,
         extra, extra
     );
 }

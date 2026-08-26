@@ -16,6 +16,64 @@ For example:
 
     setenv XeroxCedar ~/Desktop/CSL-93-16/Cedar
 
+# Q : What is VersionMap?
+
+The VersionMap for a "Cedar Release" is a (pair of) data structures designed to reduce the cost of searching for items (i.e. files) that constitute the release.  The lookup functions supported are "by (short) name" and "by version stamp".
+
+Let's back up a bit.
+
+A Cedar Release is simply a (closed) set of files.
+Each file object has 3 attributes :
+    a 'location',
+    a "create date" (aka mtime), and
+    a (48-bit) "version stamp".
+
+A location (aka pathname) is a bit complicated, informally think of it as being an IFS name of the form :
+    [server]<directory>subdirs>shortname!version
+
+The shortname is further structured as a (base, ext) pair separted by a dot (.) which base doesn't contain any dots, but ext may (ugh/yuck).  For the purposes of 'cedarname' we only have to worry about the shortname.
+
+As you might expect - everyone, even Cedar, has their own notion of time.  Thankfully, Cedar is similar to unix and instances of time have integer values, representing a (unique) distance / interval from a fixed 'epoch' value (i.e. 0).  Sadly, Cedar's BasicTime epoch differs from the de-facto unix value, so an adjustment value is added to compensate so that we can use unix/posix utilities to express the numeric value as a "calendar string" which users prefer (!!) when trying to understand when instances of time happened.
+
+Version Stamps are GUID's, which are constructed (pseudo) 'randomly'.
+There seems to be some fuzzyness around how various Cedar releases implemented GUIDs,
+for the present release (Cedar 10.1), 64 bits are available in the data, but only 32 bits (num and hi) are non-zero.
+
+# VersionMap data
+
+Ignoring for the moment byte-order issues (network vs. host, big vs little),
+The VersionMap file (data) has 3 sections : the shortname 'index', the file entry list, and a compact character table (stab).  Oh, and the first "line" which indicates how many entries there are.
+
+The file entry list contains the tuples, with the location string represented as a numeric reference into the stab so that the records are fixed length.  There's a trick being done with the character table where the variable llength strings are a sequential log, and there's an extra (null) file entry that supplies the "following index" for the last location string.  So, location string length is computed by using the 'start' from the file entry and the "just after" from the successor file entry.  This means you don't have to compute how long the character table is - that's done once when the file is read into memory.
+
+The file entry list is kept in 'stamp' order, and the shortname list is kept in alphabetical order.
+The 2 maps can therefore be quickly accessed using a binary search algorithm.
+
+# Original Definitive Reference for VersionMap and DF's - CSL-82-7, pg 85, Fig 4.3
+
+    I highly recommend reading Eric's thesis.
+
+    Eric Schmidt's thesis
+    Xerox PARC Technical Report, CSL-82-7, December 1982
+    http://www.bitsavers.org/pdf/xerox/parc/techReports/CSL-82-7_Controlling_Large_Software_Development_In_a_Distributed_Environment.pdf
+
+    https://www2.eecs.berkeley.edu/Pubs/TechRpts/1982/7596.html
+
+    @phdthesis{Schmidt:7596,
+        Author= {Schmidt, Eric E.},
+        Title= {Controlling Large Software Development in a Distributed Environment},
+        School= {EECS Department, University of California, Berkeley},
+        Year= {1982},
+    }
+
+    I was unaware of it until just recently (Aug 2026).
+
+    I'm down this Rabbit-Hole getting perspective on how this early work relates to the de-facto use of DF's and the evolutionary path(s) our tooling traveled. My experience is/was clearly very different from the research inrtent of the "System Modeller", as least as things go relative to the editor informing the SM of updates and immediately compiling modules and doing system updates (live module replacement).
+
+    What I can say is that there's a high degree of fidelity between the Early Cedar work, the last Dorado Cedar release, and the early days of Mimosa / PCedar.
+
+    I should probably mention something about MakeDo at this point, but let me hold off on that until I wrap my headed around things a bit more
+
 # build philosophy
 
 I'm a minimalist.  The upside for that is when tools evolve things don't break
@@ -43,8 +101,8 @@ so let's use them for testing :
     ./cedarname /r/Rope.mesa
 
     ./cedarname --dumpEntry /r/Tioga.tip
-    ./cedarname --dumpIndex
     ./cedarname --dumpAll
+    ./cedarname --dumpIndex
     ./cedarname --dumpSorted
 
 # Implementor Notes
@@ -71,31 +129,6 @@ so let's use them for testing :
     At a minimum this can work for the release CDROM (i.e. Cedar10.1). For older or newer versions,
     enhancements may be required. It's also intended as an easy to understand illustration for folks
     who have no prior experience with Cedar.
-
-# Original Definitive Reference for DF's - CSL-82-7, pg 85, Fig 4.3
-
-    I highly recommend reading Eric's thesis.
-
-    Eric Schmidt's thesis
-    Xerox PARC Technical Report, CSL-82-7, December 1982
-    http://www.bitsavers.org/pdf/xerox/parc/techReports/CSL-82-7_Controlling_Large_Software_Development_In_a_Distributed_Environment.pdf
-
-    https://www2.eecs.berkeley.edu/Pubs/TechRpts/1982/7596.html
-
-    @phdthesis{Schmidt:7596,
-        Author= {Schmidt, Eric E.},
-        Title= {Controlling Large Software Development in a Distributed Environment},
-        School= {EECS Department, University of California, Berkeley},
-        Year= {1982},
-    }
-
-    I was unaware of it until just recently (Aug 2026).
-
-    I'm down this Rabbit-Hole getting perspective on how this early work relates to the de-facto use of DF's and the evolutionary path(s) our tooling traveled. My experience is/was clearly very different from the research inrtent of the "System Modeller", as least as things go relative to the editor informing the SM of updates and immediately compiling modules and doing system updates (live module replacement).
-
-    What I can say is that there's a high degree of fidelity between the Early Cedar work, the last Dorado Cedar release, and the early days of Mimosa / PCedar.
-
-    I should probably mention something about MakeDo at this point, but let me hold off on that until I wrap my headed around things a bit more
 
 # find this project on github
 
