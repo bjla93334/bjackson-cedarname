@@ -104,8 +104,10 @@ so let's use them for testing :
     ./cedarname --dumpAll
     ./cedarname --dumpIndex
     ./cedarname --dumpSorted
+    ./cedarname --dumpPrefixMap
+    ./cedarname --dumpStab
 
-# Implementor Notes
+# Implementor Notes - Archaeology or Forensics ??
 
     The 'stab' (Index) is NOT paired with the Entry in dumpAll.
     Don't think too hard about it - just think slice 'i' of independent tables.
@@ -113,6 +115,23 @@ so let's use them for testing :
     ./cedarname --dumpSorted | egrep 'canon|utc' | less
     ./cedarname --dumpAll | egrep 'canon|stamp' | sed -e 's| 0000 lo:.*||' | less
     ./cedarname --dumpAll | egrep ' i:|stab:' > /tmp/stab-order
+    ./cedarname --dumpStab | sort -n -k2 | less
+
+    Hmmm, stab ordering isn't what I expected ??
+    Symbol Table starts with : "[Cedar10.1]<Top>", and does end at MMMKeyboard.mesa!2
+    there's CR's between values
+
+    0 17 [Cedar10.1]<Phoenix>PhSwitchImpl.mesa!1
+    1 57 [Cedar10.1]<Commands>SlateSessions.command!1
+    ...
+    7632 326257 [Cedar10.1]<ColorTrix>ColorTrixViewer.require!1
+    7633 326305 [Cedar10.1]<MMM>MMMKeyboard.mesa!2
+
+    ./cedarname --dumpEntry /r/CedarSource.VersionMap
+
+    canon: [Cedar10.1]<CedarVersionMap>CedarSource.VersionMap!63
+    305e03b3 created: 811467699
+    2c9a4b33 utc: 748309299 (1993-09-17 23:41:39 UTC)
 
 # DF Syntax
 

@@ -1,6 +1,14 @@
 // quick and dirty :
 
-enum flag_t { OPT_DEBUG, OPT_TRACE, OPT_DUMPENTRY, OPT_DUMPINDEX, OPT_DUMPSORTED, OPT_DUMPALL };
+// order is import here
+enum flag_t { OPT_DEBUG, OPT_TRACE,
+    OPT_DUMP_ALL,
+    OPT_DUMP_ENTRY,
+    OPT_DUMP_INDEX,
+    OPT_DUMP_PREFIXMAP,
+    OPT_DUMP_SORTED,
+    OPT_DUMP_STAB
+};
 
 extern char *options[];
 extern int o_flags;
@@ -9,13 +17,14 @@ extern int o_flags;
 char *options[] = {
     "--debug",
     "--trace",
+    "--dumpAll",
     "--dumpEntry",
     "--dumpIndex",
+    "--dumpPrefixMap",
     "--dumpSorted",
-    "--dumpAll",
+    "--dumpStab",
     NULL
 };
-
 int o_flags = 0; // assumes only a few
 #endif
 
@@ -24,6 +33,8 @@ inline bool opt_set(enum flag_t flavor) {
     return (o_flags & (1 << flavor));
 }
 
-extern void DumpIndex();
 extern void DumpAll(int swap);
+extern void DumpIndex();
+extern void DumpPrefixMap();
 extern void DumpSorted(int swap);
+extern void DumpStab();

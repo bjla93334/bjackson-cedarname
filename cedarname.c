@@ -44,20 +44,12 @@ int main(int argc, char *argv[]) {
 	printf("%s\n", p);
     }
 
-    if (opt_set(OPT_DUMPINDEX)) {
-	// printf("Index:\n");
-        DumpIndex();
-    }
-
-    if (opt_set(OPT_DUMPALL)) {
-	// printf("Map:\n");
-        DumpAll(1);
-    }
-
-    if (opt_set(OPT_DUMPSORTED)) {
-	// printf("Map:\n");
-        DumpSorted(1);
-    }
+    if (opt_set(OPT_DUMP_ALL)) { DumpAll(1); }
+    // OPT_DUMP_ENTRY,
+    if (opt_set(OPT_DUMP_INDEX)) { DumpIndex(); }
+    if (opt_set(OPT_DUMP_SORTED)) { DumpSorted(1); }
+    if (opt_set(OPT_DUMP_PREFIXMAP)) { DumpPrefixMap(); }
+    if (opt_set(OPT_DUMP_STAB)) { DumpStab(); }
 
     return rc;
 }

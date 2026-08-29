@@ -41,6 +41,7 @@ struct Map {
     struct MapEntry *entries;	/* the map entries */
     long nChars;		/* number of chars in names */
     char *names;		/* all the names */
+    uint32_t *locationIndex;    /* 'btree' of location names (not from map) */
 };
 
 static void fetchCanon(struct Map *map, int i, char *buf) {
@@ -208,8 +209,34 @@ static void DumpSome(struct Map *map, int swap) {
     printf("\n");
 }
 
+// insertion bubble-sort
+void insertLocation(struct Map *map, int *table, int len) {
+    int newbie_index = len;
+    char newbie[1024];
+    fetchCanon(map, newbie_index, newbie);
+    // printf("%d %s\n", newbie_index, newbie);
+
+    char opponent[1024];
+
+    table[len] = newbie_index; // insert at 'bottom'
+    for (int finger = len; finger > 0 ; finger--) {
+        int opponent_index = table[finger-1];
+        fetchCanon(map, opponent_index, opponent);
+        int placing = strcmp(newbie, opponent); // who cares about matches ??
+        // printf("%d %s %d\n", newbie_index, newbie, placing);
+
+        // if (newbie > opponent) break;
+        if (placing > 0) break;
+
+        // swap these
+        table[finger] = opponent_index;
+        table[finger-1] = newbie_index;
+    }
+}
+
 /* Read the version map from disk.  Assumes endian match with data. */
-static struct Map *ReadMap(char *name) {
+static struct Map *ReadMap(char *cedarMapIFSName) {
+    char *name = pfs_TranslateName(cedarMapIFSName);
     FILE *fd = fopen(name, "r");
     if (fd == NULL) { perror(name); }
     if (fd == NULL) return NULL;
@@ -238,8 +265,13 @@ static struct Map *ReadMap(char *name) {
     map->len = len;
     map->nChars = nChars;
 
+    map->locationIndex = (int *) malloc(len * sizeof(int));
+
     // printf("map : %ld %ld\n", map->len, map->nChars);
 
+    // table of MapEntry
+    // table of shortNames
+    // stab
     if (key == LongKey) {
         long xx = fread(map->entries, sizeof(struct MapEntry), len, fd);
         // printf("LongKey entries : %ld\n", xx);
@@ -248,29 +280,36 @@ static struct Map *ReadMap(char *name) {
         long yy = fread(map->shortNames, sizeof(uint32_t), len, fd);
         // printf("LongKey shortNames : %ld\n", yy);
         if (yy != len) goto bad;
+
+        // DumpSome(map, 1);
+        FixMapEndian(map);
+        // DumpSome(map, 0);
     }
     else {
-        // FIXME: byte order? / dead code?
+// FIXME: byte order? / dead code?
+        unsigned short a[7];	/* for dealing with short form */
 	for (int i = 0; i < len; ++i) {
-            unsigned short a[7];	/* for dealing with short form */
 	    if (fread(a, sizeof(a), 1, fd) != 1) goto bad;
-
 	    map->entries[i].index = ((long) a[6] << 16) | (long) a[5];
-	    /* others don't matter */
+	    /* others : a[0-4] don't matter */
 	}
 
 	for (int i = 0; i < len; ++i) {
 	    int c1 = getc(fd);
 	    int c2 = getc(fd);
 	    if (c1 == EOF || c2 == EOF) goto bad;
-
 	    map->shortNames[i] = (c1 << 8) | c2;
 	}
     }
 
     long zz = fread(map->names, 1, nChars, fd);
     if (zz != nChars) {
-/*
+        goto bad;
+    }
+
+    /*
+    // file length should match the amount of data we've read
+    if (debug) {
         long total = 
             (len * sizeof(struct MapEntry))
             + (len * sizeof(uint32_t))
@@ -281,13 +320,8 @@ static struct Map *ReadMap(char *name) {
             map->len, map->nChars,
             total, zz
         );
-*/
-        goto bad;
     }
-
-    // DumpSome(map, 1);
-    FixMapEndian(map);
-    // DumpSome(map, 0);
+    */
 
     /*
       Make it easy to find the end of name.
@@ -295,11 +329,17 @@ static struct Map *ReadMap(char *name) {
      */
     map->entries[len].index = nChars;
     fclose(fd);
+
+    // build locationIndex, ordered appropriately
+    for (int i = 0; i < map->len; i++) {
+        insertLocation(map, map->locationIndex, i);
+    }
     return map;
 bad:
     free(map->names);
     free(map->shortNames);
     free(map->entries);
+    free(map->locationIndex);
     free(map);
     fclose(fd);
     // fprintf(stderr, "%s : map read error\n", name);
@@ -367,7 +407,7 @@ static char *vermap_Lookup(struct Map *map, char *name) {
     if (i == -1) { pfs_errorMsg = "Can't find in version map."; return NULL; }
 
     /* Found it. */
-    if (opt_set(OPT_DUMPENTRY)) {
+    if (opt_set(OPT_DUMP_ENTRY)) {
         DumpEntry(map, i, 1);
     }
 
@@ -400,11 +440,23 @@ struct FSEntry {
     char *(*translateProc)();	/* routine to translate it */
 };
 
-static char *cedarMapName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
+static char *cedarMapIFSName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
 static struct Map *cedarMap = NULL;
 
+void DumpStab() {
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    for (int i = 0; i < cedarMap->len; i++) {
+        uint32_t entry_index = cedarMap->locationIndex[i];
+        char canon[1024];
+        fetchCanon(cedarMap, entry_index, canon);
+
+        int stab_index = cedarMap->entries[entry_index].index;
+        printf("%d %d %s\n", entry_index, stab_index, canon);
+    }
+}
+
 void DumpIndex() {
-    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         uint32_t name_index = cedarMap->shortNames[i];
         printf("%d\n", name_index);
@@ -412,14 +464,14 @@ void DumpIndex() {
 }
 
 void DumpAll(int swap) {
-    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         DumpEntry(cedarMap, i, swap);
     }
 }
 
 void DumpSorted(int swap) {
-    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         uint32_t stab = (swap) ? cedarMap->shortNames[i] : be32toh(cedarMap->shortNames[i]); // arg to Compare()
         DumpEntry(cedarMap, stab, swap);
@@ -431,7 +483,7 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
     if (p == NULL) p = name; else ++p; // skip prefix
 
     // printf("vermap_Translate: %s\n", name);
-    if (cedarMap == NULL) cedarMap = ReadMap(pfs_TranslateName(cedarMapName));
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
     char *res = vermap_Lookup(cedarMap, p);
     return res;
 }

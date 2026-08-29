@@ -166,7 +166,8 @@ static void InsertPE(struct PrefixEntry *newpe) {
     *lag = newpe;
 }
 
-static void DumpPrefixMap() {
+void DumpPrefixMap() {
+    if (!pfsInited) InitPFS();
     for (struct PrefixEntry *pe = prefixes; pe != NULL; pe=pe->next) {
         printf("%s(%d) %s\n", pe->name, pe->length, pe->translation);
     }
