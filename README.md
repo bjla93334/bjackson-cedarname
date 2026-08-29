@@ -111,6 +111,8 @@ so let's use them for testing :
     Don't think too hard about it - just think slice 'i' of independent tables.
 
     ./cedarname --dumpSorted | egrep 'canon|utc' | less
+    ./cedarname --dumpAll | egrep 'canon|stamp' | sed -e 's| 0000 lo:.*||' | less
+    ./cedarname --dumpAll | egrep ' i:|stab:' > /tmp/stab-order
 
 # DF Syntax
 

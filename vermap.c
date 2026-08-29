@@ -144,7 +144,7 @@ static void DumpEntry(struct Map *map, int i, int swap) {
         created, created,
         utc, utc, calendar,
         index, index,
-num, hi,
+        num, hi,
         num, num,
         hi, hi,
         lo, lo,
@@ -210,22 +210,22 @@ static void DumpSome(struct Map *map, int swap) {
 
 /* Read the version map from disk.  Assumes endian match with data. */
 static struct Map *ReadMap(char *name) {
-    FILE *f = fopen(name, "r");
-    if (f == NULL) { perror(name); }
-    if (f == NULL) return NULL;
+    FILE *fd = fopen(name, "r");
+    if (fd == NULL) { perror(name); }
+    if (fd == NULL) return NULL;
 
     /* File starts with three ASCII integers and CR. */
     long key, len, nChars;
-    int count = fscanf(f, "%ld %ld %ld", &key, &len, &nChars);
-    if (count != 3) { fclose(f); return NULL; }
+    int count = fscanf(fd, "%ld %ld %ld", &key, &len, &nChars);
+    if (count != 3) { fclose(fd); return NULL; }
     // fprintf(stderr, "%s : %s\n", name, "count : broken first line?");
 
-    int c = getc(f);
-    if (c != '\r') { fclose(f); return NULL; } // yes, CR, not LF
+    int c = getc(fd);
+    if (c != '\r') { fclose(fd); return NULL; } // yes, CR, not LF
     // fprintf(stderr, "%s : %s\n", name, "endl : broken first line?");
 
     /* Only long format for now. */
-    if (key != LongKey && key != ShortKey) { fclose(f); return NULL; }
+    if (key != LongKey && key != ShortKey) { fclose(fd); return NULL; }
     // fprintf(stderr, "%s : %s(%ld)\n", name, "bad key", key);
 
     // another possible feature : dump version map stats:
@@ -241,11 +241,11 @@ static struct Map *ReadMap(char *name) {
     // printf("map : %ld %ld\n", map->len, map->nChars);
 
     if (key == LongKey) {
-        long xx = fread(map->entries, sizeof(struct MapEntry), len, f);
+        long xx = fread(map->entries, sizeof(struct MapEntry), len, fd);
         // printf("LongKey entries : %ld\n", xx);
         if (xx != len) goto bad;
 
-        long yy = fread(map->shortNames, sizeof(uint32_t), len, f);
+        long yy = fread(map->shortNames, sizeof(uint32_t), len, fd);
         // printf("LongKey shortNames : %ld\n", yy);
         if (yy != len) goto bad;
     }
@@ -253,22 +253,22 @@ static struct Map *ReadMap(char *name) {
         // FIXME: byte order? / dead code?
 	for (int i = 0; i < len; ++i) {
             unsigned short a[7];	/* for dealing with short form */
-	    if (fread(a, sizeof(a), 1, f) != 1) goto bad;
+	    if (fread(a, sizeof(a), 1, fd) != 1) goto bad;
 
 	    map->entries[i].index = ((long) a[6] << 16) | (long) a[5];
 	    /* others don't matter */
 	}
 
 	for (int i = 0; i < len; ++i) {
-	    int c1 = getc(f);
-	    int c2 = getc(f);
+	    int c1 = getc(fd);
+	    int c2 = getc(fd);
 	    if (c1 == EOF || c2 == EOF) goto bad;
 
 	    map->shortNames[i] = (c1 << 8) | c2;
 	}
     }
 
-    long zz = fread(map->names, 1, nChars, f);
+    long zz = fread(map->names, 1, nChars, fd);
     if (zz != nChars) {
 /*
         long total = 
@@ -294,14 +294,14 @@ static struct Map *ReadMap(char *name) {
       an extra entry was allocated just for this
      */
     map->entries[len].index = nChars;
-    fclose(f);
+    fclose(fd);
     return map;
 bad:
     free(map->names);
     free(map->shortNames);
     free(map->entries);
     free(map);
-    fclose(f);
+    fclose(fd);
     // fprintf(stderr, "%s : map read error\n", name);
     return NULL;
 }
