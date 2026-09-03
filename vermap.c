@@ -80,6 +80,7 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
     gmtime_r(&epoch_time, &utc_time);
     strftime(buffer, buflen, "%Y-%m-%d %H:%M:%S UTC", &utc_time);
 /*
+if (debug) {
     // tm_year since 1900
     // tm_mon 0-11
     printf("%04d-%02d-%02d %02d:%02d:%02d UTC",
@@ -90,6 +91,7 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
        utc_time.tm_min,
        utc_time.tm_sec
     );
+}
 */
 }
 
@@ -100,10 +102,11 @@ static void DumpEntry(struct Map *map, int i, int swap) {
     struct MapEntry *mep = &(map->entries[i]);
     uint32_t created = (swap) ? mep->created : be32toh(mep->created);
     uint32_t index = (swap) ? mep->index : be32toh(mep->index); // index into string table
-    uint16_t lo = (swap) ? mep->stamp.lo : be16toh(mep->stamp.lo);
-    uint16_t num = (swap) ? mep->stamp.num : be16toh(mep->stamp.num);
-    uint16_t hi = (swap) ? mep->stamp.hi : be16toh(mep->stamp.hi);
-    uint16_t extra = (swap) ? mep->stamp.extra : be16toh(mep->stamp.extra);
+    struct Stamp stamp = mep->stamp;
+    uint16_t lo = (swap) ? stamp.lo : be16toh(stamp.lo);
+    uint16_t num = (swap) ? stamp.num : be16toh(stamp.num);
+    uint16_t hi = (swap) ? stamp.hi : be16toh(stamp.hi);
+    uint16_t extra = (swap) ? stamp.extra : be16toh(stamp.extra);
 
     // leap year ??
     uint64_t utc = (-24*60*60) + (-2*365*24*60*60) + (uint64_t) created;
@@ -176,10 +179,11 @@ static void FixMapEndian(struct Map *map) {
 
         uint32_t created = be32toh(mep->created);
         uint32_t index = be32toh(mep->index); // index into string table
-        uint16_t lo = be16toh(mep->stamp.lo);
-        uint16_t num = be16toh(mep->stamp.num);
-        uint16_t hi = be16toh(mep->stamp.hi);
-        uint16_t extra = be16toh(mep->stamp.extra);
+        struct Stamp stamp = mep->stamp;
+        uint16_t lo = be16toh(stamp.lo);
+        uint16_t num = be16toh(stamp.num);
+        uint16_t hi = be16toh(stamp.hi);
+        uint16_t extra = be16toh(stamp.extra);
 
         // copy back host-order values;
         map->shortNames[i] = name_index;
@@ -348,6 +352,38 @@ bad:
 
 static int Compare(struct Map *map, char *name, int index);
 
+static int CompareStamp(struct Map *map, int version, int index) {
+    struct MapEntry *mep = &map->entries[index];
+    struct Stamp stamp = mep->stamp;
+    int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
+    return version - entry_stamp;
+}
+
+/* binary search of entry list */
+static int StampFind(struct Map *map, int version) {
+    int lo = 0;
+    int hi = map->len - 1;
+
+    while (lo <= hi) {
+	int index = (lo + hi) / 2;
+
+        // printf("StampFind %d %d %d\n", lo, hi, index);
+	int r = CompareStamp(map, version, index);
+	if (r < 0) {
+	    if (lo == index) break;
+	    hi = index - 1;
+	}
+	else if (r > 0) {
+	    if (hi == index) break;
+	    lo = index + 1;
+	}
+	else /* equal */
+	    return index;
+    }
+
+    return -1;
+}
+
 /* Do the binary search in the tree. */
 static int ShortNameFind(struct Map *map, char *name) {
     int lo = 0;
@@ -486,4 +522,25 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
     if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
     char *res = vermap_Lookup(cedarMap, p);
     return res;
+}
+
+char *vermap_LookupStamp(int stamp) {
+    // printf("vermap_Translate: %s\n", name);
+    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    int entry_index = StampFind(cedarMap, stamp);
+
+// debug
+    DumpEntry(cedarMap, entry_index, 0);
+
+    char canon[1024];
+    fetchCanon(cedarMap, entry_index, canon);
+    char *p = malloc(strlen(canon) + 1);
+    strcpy(p, canon);
+    return p;
+
+    /*
+    char buf2[1024];
+    Slashify(buf2, canon);
+    return pfs_TranslateName(buf2);
+    */
 }

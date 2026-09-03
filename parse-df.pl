@@ -14,6 +14,12 @@ my $dquot = '"';
 my $squot = "'";
 my $blank = ' ';
 
+# Unix / Epoch values :
+# 0 : Thursday, January 1, 1970 at 12:00:00 AM
+# -63158400 : Monday, January 1, 1968 at 12:00:00 AM UTC
+# -63129600 : Monday, January 1, 1968 at 12:00:00 AM UTC-08:00
+my $bt_adjust = (-24*60*60) + (-2*365*24*60*60); # 63,158,400 secs
+my $bt_zone_adjust = (8*60*60); # 28,800 secs
 my %tz_map = (
     'PDT' => '-0700',
     'PST' => '-0800'
@@ -42,11 +48,16 @@ my %freq;
 # my $sepr = '.!>+-$_~?';
 my $vname_sepr = '.!>+';
 
+# IsDelim(c) ((c) == '[' || (c) == ']' || (c) == '<' || (c) == '>' || (c) == '/')
+
 # +sub>base.ext!version
 sub parse_vname {
     my ($vname) = @_;
-    # print STDERR (join($blank, 'vname', $vname), $endl);
-    my $parts = ''; # ref
+    my $xxx = $vname; $xxx =~ s|^\+||;
+    my @comps = split(/[\[\]<>\/!]+/, $xxx);
+    @comps = grep { $_ ne '' } @comps; # remove empty (back-to-back delim)
+    my $parts = join('/', @comps); # ref
+    print STDERR (join($blank, $parts, @comps, 'vname', $vname), $endl);
     return $parts;
 }
 
@@ -134,13 +145,15 @@ sub process {
             my ($vname, $cal, $time, $tz) = ($1, $2, $3, $4);
             # print STDERR (join($blank, $lineno, $section, 'item', $vname, $cal, $time, $tz), $endl);
 
-            my $cal_spec = join($blank, $2, $3, $tz_map{$4});
-            my $t = Time::Piece->strptime($cal_spec, $basictime_fmt);
-            my $epoch = $t->epoch;
-            # print STDERR (join($blank, $lineno, $section, 'item', $vname, $epoch, $cal_spec), $endl);
+            my $when = join($blank, $cal, $time, $tz_map{$tz});
+            my $t = Time::Piece->strptime($when, $basictime_fmt);
+            my $epoch = $t->epoch; # note this is unix epoch, not a BasicTime
+            my $basic_time = $epoch + $bt_adjust;
+            # print STDERR (join($blank, $lineno, $section, 'item', $vname, $basic_time, $epoch, $when), $endl);
 
 my $parts = parse_vname($vname);
 ## FIXME
+
             next if $section eq 'dir';
             next if $section eq 'export';
         }

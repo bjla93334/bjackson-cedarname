@@ -51,5 +51,12 @@ int main(int argc, char *argv[]) {
     if (opt_set(OPT_DUMP_PREFIXMAP)) { DumpPrefixMap(); }
     if (opt_set(OPT_DUMP_STAB)) { DumpStab(); }
 
+    {
+        extern char *vermap_LookupStamp(int stamp);
+        int duncan = 0x4ab6a9f8; // /r/Tioga.tip - stamp: 4ab6a9f8 4ab6 num: 19126 a9f8 hi: 43512
+        char *ifs_name = vermap_LookupStamp(duncan);
+        printf("duncan : %s %d 0x%x\n", ifs_name, duncan, duncan);
+    }
+
     return rc;
 }
