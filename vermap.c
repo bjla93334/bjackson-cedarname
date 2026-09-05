@@ -239,8 +239,7 @@ void insertLocation(struct Map *map, int *table, int len) {
 }
 
 /* Read the version map from disk.  Assumes endian match with data. */
-static struct Map *ReadMap(char *cedarMapIFSName) {
-    char *name = pfs_TranslateName(cedarMapIFSName);
+static struct Map *ReadMap(char *name) {
     FILE *fd = fopen(name, "r");
     if (fd == NULL) { perror(name); }
     if (fd == NULL) return NULL;
@@ -476,11 +475,15 @@ struct FSEntry {
     char *(*translateProc)();	/* routine to translate it */
 };
 
-static char *cedarMapIFSName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
+char *localFSName;
 static struct Map *cedarMap = NULL;
 
+void setMapName(char *name) {
+    localFSName = name;
+}
+
 void DumpStab() {
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         uint32_t entry_index = cedarMap->locationIndex[i];
         char canon[1024];
@@ -492,7 +495,7 @@ void DumpStab() {
 }
 
 void DumpIndex() {
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         uint32_t name_index = cedarMap->shortNames[i];
         printf("%d\n", name_index);
@@ -500,14 +503,14 @@ void DumpIndex() {
 }
 
 void DumpAll(int swap) {
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         DumpEntry(cedarMap, i, swap);
     }
 }
 
 void DumpSorted(int swap) {
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     for (int i = 0; i < cedarMap->len; i++) {
         uint32_t stab = (swap) ? cedarMap->shortNames[i] : be32toh(cedarMap->shortNames[i]); // arg to Compare()
         DumpEntry(cedarMap, stab, swap);
@@ -519,14 +522,14 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
     if (p == NULL) p = name; else ++p; // skip prefix
 
     // printf("vermap_Translate: %s\n", name);
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     char *res = vermap_Lookup(cedarMap, p);
     return res;
 }
 
 char *vermap_LookupStamp(int stamp) {
     // printf("vermap_Translate: %s\n", name);
-    if (cedarMap == NULL) cedarMap = ReadMap(cedarMapIFSName);
+    if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     int entry_index = StampFind(cedarMap, stamp);
 
 // debug

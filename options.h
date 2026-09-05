@@ -7,7 +7,8 @@ enum flag_t { OPT_DEBUG, OPT_TRACE,
     OPT_DUMP_INDEX,
     OPT_DUMP_PREFIXMAP,
     OPT_DUMP_SORTED,
-    OPT_DUMP_STAB
+    OPT_DUMP_STAB,
+    OPT_MAP_FILE
 };
 
 extern char *options[];
@@ -23,6 +24,7 @@ char *options[] = {
     "--dumpPrefixMap",
     "--dumpSorted",
     "--dumpStab",
+    "--mapFile",
     NULL
 };
 int o_flags = 0; // assumes only a few
@@ -32,6 +34,8 @@ __attribute__((always_inline))
 inline bool opt_set(enum flag_t flavor) {
     return (o_flags & (1 << flavor));
 }
+
+extern void setMapName(char *localFSName);
 
 extern void DumpAll(int swap);
 extern void DumpIndex();

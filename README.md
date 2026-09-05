@@ -16,7 +16,7 @@ For example:
 
     setenv XeroxCedar ~/Desktop/CSL-93-16/Cedar
 
-# Q : What is VersionMap?
+# Q : What is a VersionMap?
 
 The VersionMap for a "Cedar Release" is a (pair of) data structures designed to reduce the cost of searching for items (i.e. files) that constitute the release.  The lookup functions supported are "by (short) name" and "by version stamp".
 
@@ -106,6 +106,10 @@ so let's use them for testing :
     ./cedarname --dumpSorted
     ./cedarname --dumpPrefixMap
     ./cedarname --dumpStab
+
+# ugh, other map file format(s)
+
+    ./cedarname --mapFile data/CedarSource.VersionMap\!34  /r/Rope.mesa
 
 # Implementor Notes - Archaeology or Forensics ??
 

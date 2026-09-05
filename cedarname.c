@@ -11,7 +11,12 @@
 #define OPT_INIT
 #include "options.h"
 
+static char *cedarMapIFSName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
+
 int main(int argc, char *argv[]) {
+    char *localFSName = pfs_TranslateName(cedarMapIFSName);
+    setMapName(localFSName);
+
     int rc = 0;
 
 /*
@@ -32,7 +37,12 @@ int main(int argc, char *argv[]) {
             }
         }
         if (found != -1) {
-            o_flags ^= (1 << found); // yeah, primitive, sloppy
+            o_flags ^= (1 << found); // yeah, primitive, sloppy, fragile
+            continue;
+        }
+        if (opt_set(OPT_MAP_FILE)) {
+            o_flags ^= (1 << OPT_MAP_FILE); // this is truly embarassing
+            setMapName(pfs_path);
             continue;
         }
         char *p = pfs_TranslateName(pfs_path);
@@ -51,7 +61,8 @@ int main(int argc, char *argv[]) {
     if (opt_set(OPT_DUMP_PREFIXMAP)) { DumpPrefixMap(); }
     if (opt_set(OPT_DUMP_STAB)) { DumpStab(); }
 
-    {
+    int something = 0;
+    if (something) {
         extern char *vermap_LookupStamp(int stamp);
         int duncan = 0x4ab6a9f8; // /r/Tioga.tip - stamp: 4ab6a9f8 4ab6 num: 19126 a9f8 hi: 43512
         char *ifs_name = vermap_LookupStamp(duncan);
