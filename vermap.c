@@ -355,7 +355,10 @@ static int CompareStamp(struct Map *map, int version, int index) {
     struct MapEntry *mep = &map->entries[index];
     struct Stamp stamp = mep->stamp;
     int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
-    return version - entry_stamp;
+    int distance = version - entry_stamp;
+
+    // printf("CompareStamp %d %04x %04x %d\n", index, version, entry_stamp, distance);
+    return distance;
 }
 
 /* binary search of entry list */
@@ -377,7 +380,7 @@ static int StampFind(struct Map *map, int version) {
 	    lo = index + 1;
 	}
 	else /* equal */
-	    return index;
+	    return index -1;
     }
 
     return -1;
@@ -530,13 +533,13 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
 char *vermap_LookupStamp(int stamp) {
     // printf("vermap_Translate: %s\n", name);
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
-    int entry_index = StampFind(cedarMap, stamp);
+    int stamp_index = StampFind(cedarMap, stamp);
 
 // debug
-    DumpEntry(cedarMap, entry_index, 0);
+    DumpEntry(cedarMap, stamp_index, 0);
 
     char canon[1024];
-    fetchCanon(cedarMap, entry_index, canon);
+    fetchCanon(cedarMap, stamp_index, canon);
     char *p = malloc(strlen(canon) + 1);
     strcpy(p, canon);
     return p;
