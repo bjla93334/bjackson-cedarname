@@ -10,6 +10,28 @@
 #include <string.h>
 #include <time.h>
 
+// RAM is cheap!
+// don't forget : free(buffer);
+char *snarf(char *pathname, long *len) {
+    FILE *fp = fopen(pathname, "rb");
+    if (fp == NULL) { perror("open"); return NULL; }
+
+    fseek(fp, 0, SEEK_END);
+    long file_length = ftell(fp);
+
+    char *buffer = (char *)malloc(file_length);
+    if (buffer == NULL) { perror("malloc"); fclose(fp); return NULL; }
+
+    rewind(fp);
+    size_t bytes_read = fread(buffer, 1, file_length, fp);
+    if (bytes_read != file_length) { perror("read"); return NULL; }
+    fclose(fp);
+
+    if (len != NULL) *len = file_length;
+
+    return buffer;
+}
+
 #include "pfs.h"
 #include "options.h"
 
