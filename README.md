@@ -176,6 +176,15 @@ thingy came from ??
 od -t x1 data/CedarSource.VersionMap\!34 | head
 0000000 e3 de 01 2e 05 dc 00 00 00 22 9e 44 6d a2 20 3e
 
+od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
+0056700 8900 3402 6402 . 2ba5 0000 435b 6465 7261 (xx) "C[dera.."
+
+    nChars [2ba5 0000] : 42283
+    [Cedar]<Cedar6.1>[Cedar]<Cedar6.1>
+    PCRuntime>LupineRuntime.mesa!1
+    ...
+    MakeBoot>MakeMakeBoot.cm!1
+
 version: [dee3 2e01],
 nEntries: [dc05 0000],
 map.entries,
@@ -192,30 +201,48 @@ MyVersion: INT = 19850206; -- 012E.E3DE
     We got this number from the date February 6, 1985, and
     we suggest that future versions also use this convention for generating this number.
 
+MyStamp: TYPE = MACHINE DEPENDENT RECORD [lo,num,hi: CARDINAL];
 SaveMapToFile: PUBLIC PROC [map: Map, name: ROPE] = TRUSTED {
     st: IO.STREAM ← FS.StreamOpen[name, $create];
     names: ROPE ← map.names;
-    namesChars: INT ← names.Size[];
-    len: NAT ← map.len;
 
     myVersion: INT ← MyVersion;
+    len: NAT ← map.len;
+    namesChars: INT ← names.Size[];
+
     IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@myVersion]], 0, SIZE[INT]*bytesPerWord]];
         -- first, output the internal version number
+        -- 4 bytes, INT32
     IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@len]], 0, SIZE[NAT]*bytesPerWord]];
         -- first, output the # of entries
+        -- 4 bytes, NAT31
     IO.UnsafePutBlock[st, [LOOPHOLE[@map.entries[0]], 0, len*(SIZE[MapEntry]*bytesPerWord)]];
         -- next, the entries themselves
+        -- MapEntry112
     IO.UnsafePutBlock[st, [LOOPHOLE[@map.shortNameSeq[0]], 0, len*(SIZE[CARDINAL]*bytesPerWord)]];
         -- next, the shortNameSeq
+        -- CARD16[len]
     IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@namesChars]], 0, (SIZE[INT]*bytesPerWord)]];
         -- next, the number of characters we are about to write (not counting the end marker)
+        -- 4 bytes, INT32
     IO.PutRope[st, names];
         -- then the names rope
+        -- CHAR8[namesChars]
     IO.PutRope[st, "\000\000\000"];
         -- marker at end to make Tioga happy
+        -- 3 bytes
     IO.SetLength[st, IO.GetIndex[st]]; -- force goddamm truncation already!!!
     IO.Close[st];
 };
+
+    body_count 66296
+    header: [dee3, 2e01] 19850206
+    header: [dc05, 0000] 1500
+    0x012ee3de 19850206 nChars 42283 24000
+    bulk 24013, grain 16 bits 128
+
+    13 = 3 x NUL, header(8), nChars(2)
+
 
 # Implementor Notes - Archaeology or Forensics ??
 

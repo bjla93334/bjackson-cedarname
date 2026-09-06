@@ -55,16 +55,16 @@ struct __attribute__((packed)) Stamp64 {
     uint16_t extra;
 };
 
-struct __attribute__((packed)) Stamp48 {
-    uint16_t lo;
-    uint16_t num;
-    uint16_t hi;
-};
-
 struct __attribute__((packed)) MapEntry128 {
     struct Stamp64 stamp;
     uint32_t created;		/* cedar time value */
     uint32_t index;		/* index of first char of long name */
+};
+
+struct __attribute__((packed)) Stamp48 {
+    uint16_t lo;
+    uint16_t num;
+    uint16_t hi;
 };
 
 struct __attribute__((packed)) MapEntry112 {
@@ -75,12 +75,12 @@ struct __attribute__((packed)) MapEntry112 {
 
 struct Map {
     long hstamp;                /* header stamp */
-    long nEntries;			/* number of elements in each of next two  */
-    uint32_t *shortNames;	/* index of an entry, in shortname order */
-    struct MapEntry128 *entries;	/* the map entries */
+    long nEntries;		/* number of elements in each of next two  */
     long nChars;		/* number of chars in names */
+    uint32_t *shortNames;	/* index of an entry, in shortname order */
+    struct MapEntry128 *entries; /* the map entries */
     char *names;		/* all the names */
-    uint32_t *locationIndex;    /* 'btree' of location names (not from map) */
+    int *locationIndex;         /* 'btree' of location names (not from map) */
 };
 
 // be less clever about last entry
@@ -209,25 +209,25 @@ static void DumpEntry(struct Map *map, int i) {
 static void FixMap128(struct Map *map) {
     for (int i = 0; i < map->nEntries; i++) {
         // pull out biggee-values;
-        struct MapEntry128 *mep = &map->entries[i];
         uint32_t name_index = be32toh(map->shortNames[i]);
 
-        uint32_t created = be32toh(mep->created);
-        uint32_t index = be32toh(mep->index); // index into string table
+        struct MapEntry128 *mep = &map->entries[i];
         struct Stamp64 stamp = mep->stamp;
         uint16_t lo = be16toh(stamp.lo);
         uint16_t num = be16toh(stamp.num);
         uint16_t hi = be16toh(stamp.hi);
         uint16_t extra = be16toh(stamp.extra);
+        uint32_t created = be32toh(mep->created);
+        uint32_t index = be32toh(mep->index); // index into string table
 
         // copy back host-order values;
         map->shortNames[i] = name_index;
-        mep->created = created;
-        mep->index = index;
         mep->stamp.lo = lo;
         mep->stamp.num = num;
         mep->stamp.hi = hi;
         mep->stamp.extra = extra;
+        mep->created = created;
+        mep->index = index;
     }
 }
 
@@ -258,7 +258,7 @@ void insertLocation(struct Map *map, int *table, int current_len) {
 }
 
 /* File starts with three ASCII integers and CR. */
-static int checkHeaderLine(char *body, long body_count) {
+static int checkHeaderLine(char *body, long body_count, struct Map *map) {
     long key, nEntries, nChars;
     int span;
 
@@ -289,10 +289,14 @@ static int checkHeaderLine(char *body, long body_count) {
     }
 
     if (total > body_count) return -1;
+
+    map->hstamp = key;
+    map->nEntries = nEntries;
+    map->nChars = nChars;
     return 0; // well-formed
 }
 
-static int checkHeaderBlock(char *body, long body_count) {
+static int checkHeaderBlock(char *body, long body_count, struct Map *map) {
     uint16_t *header = (void *)body; // LOOPHOLE!
     int hstamp = be32toh((header[0] << 16) | header[1]);
     int nEntries = be32toh((header[2] << 16) | header[3]);
@@ -304,25 +308,78 @@ static int checkHeaderBlock(char *body, long body_count) {
     // header: [dc05, 0000] 1500
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[0], header[1], hstamp); }
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[2], header[3], nEntries); }
-    // map->hstamp = hstamp;
-    // map->nChars = -1;
-    if (hstamp == ShortKey) return 0;
+    if (hstamp != ShortKey) return -1;
 
-    return -1;
+    // od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
+    // 0056700 8900 3402 6402 2ba5 0000 435b 6465 7261
+    // 2ba5 0000 - 42283
+
+// FIXME : remove this junk
+    if (debug)  {
+        int offset = 0056700; // from od, approx
+        int nChars = 42283;
+        // map->hstamp = hstamp;
+        // map->nChars = nChars;
+        fprintf(stderr, "0x%08x %d nChars %d %d\n", hstamp, hstamp, nChars, offset);
+
+        int bulk = body_count - nChars;
+        int grain = bulk / nEntries;
+
+        // 0x012ee3de 19850206 nChars 42283 24000
+        // bulk 24013, grain 16 bits 128
+        fprintf(stderr, "bulk %d, grain %d bits %d\n", bulk, grain, grain * 8);
+    }
+
+    map->hstamp = hstamp;
+    map->nEntries = nEntries;
+    map->nChars = -1;
+    return 0;
+}
+
+static int TryRawHeader(FILE *fd, struct Map *map) {
+    rewind(fd);
+
+    uint16_t header[4];
+    long yy = fread(header, sizeof(header), 1, fd);
+
+    int debug = opt_set(OPT_DEBUG);
+    if (debug) { fprintf(stderr, "yy: %ld, %ld\n", yy, sizeof(header)); }
+    if (yy != 1) return 0;
+
+    for (int i = 0; i < 4; i++) { header[i] = be16toh(header[i]); }
+    int hstamp = (header[1] << 16) | header[0];
+    int nEntries = (header[3] << 16) | header[2];
+    if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[1], header[0], hstamp); }
+    if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[3], header[2], nEntries); }
+    // header: [012e, e3de] 19850206
+    // header: [0000, 05dc] 1500
+    map->hstamp = hstamp;
+    map->nChars = -1;
+    if (hstamp == ShortKey) return nEntries;
+    return 0;
 }
 
 /* Read the version map from disk. */
 static struct Map *ReadMap(char *name) {
     long body_count = 0;
     char *body = snarf(name, &body_count);
-    int v0 = checkHeaderBlock(body, body_count);
-    int v1 = checkHeaderLine(body, body_count);
-    if (v1 < 0) exit(0);
+
+    struct Map *map = (struct Map *) malloc(sizeof(*map));
+
+    int v0 = checkHeaderBlock(body, body_count, map);
+    int v1 = checkHeaderLine(body, body_count, map);
+    if ((v0 < 0) && (v1 < 0)) exit(0);
+
+    int key = map->hstamp;
+    int nEntries = map->nEntries;
+    int nChars = map->nChars;
 
     FILE *fd = fopen(name, "r");
     if (fd == NULL) { perror(name); }
     if (fd == NULL) return NULL;
 
+int old_trash = 0;
+if (old_trash) {
     /* File starts with three ASCII integers and CR. */
     long key, nEntries, nChars;
     int count = fscanf(fd, "%ld %ld %ld", &key, &nEntries, &nChars);
@@ -339,16 +396,12 @@ static struct Map *ReadMap(char *name) {
 
     // another possible feature : dump version map stats:
     // fprintf(stderr, "first line : %ld %ld %ld\n", key, nEntries, nChars);
-
-    struct Map *map = (struct Map *) malloc(sizeof(*map));
-    map->hstamp = key;
-    map->nEntries = nEntries;
+}
 
 // FIXME : gonna remove this shortly
     map->entries = (struct MapEntry128 *) malloc((nEntries + 1) * sizeof(struct MapEntry128));
     map->shortNames = (uint32_t *) malloc(nEntries * sizeof(uint32_t));
     map->names = (char *) malloc(nChars);
-    map->nChars = nChars;
 
     map->locationIndex = (int *) malloc(nEntries * sizeof(int));
 
@@ -358,6 +411,13 @@ static struct Map *ReadMap(char *name) {
     // table of shortNames
     // stab
     if (key == LongKey) {
+        // just to skip the first line, ugh!
+        {
+            long key, nEntries, nChars;
+            int count = fscanf(fd, "%ld %ld %ld", &key, &nEntries, &nChars);
+            int c = getc(fd);
+        }
+
         long xx = fread(map->entries, sizeof(struct MapEntry128), nEntries, fd);
         // fprintf(stderr, "LongKey entries : %ld\n", xx);
         if (xx != nEntries) goto bad;
@@ -366,23 +426,46 @@ static struct Map *ReadMap(char *name) {
         // fprintf(stderr, "LongKey shortNames : %ld\n", yy);
         if (yy != nEntries) goto bad;
 
-        FixMap128(map);
+        FixMap128(map); // all at once
     }
     else {
-        // FIXME: byte order? / dead code?
-        unsigned short a[7];	/* for dealing with short form */
+        // start again
+        rewind(fd);
+        int nEntries2 = TryRawHeader(fd, map);
+
+        /* others : a[0-4] don't matter */
+        // au contraire mon-ami!
+        struct MapEntry112 tiny; // 7 words, 14 bytes
 	for (int i = 0; i < nEntries; ++i) {
-	    if (fread(a, sizeof(a), 1, fd) != 1) goto bad;
-// FIXME	    nameStart(map, i) = ((long) a[6] << 16) | (long) a[5];
-	    /* others : a[0-4] don't matter */
+	    if (fread(&tiny, sizeof(tiny), 1, fd) != 1) goto bad;
+            // deal with endian-ness, one entry at a time
+            uint16_t lo = be16toh(tiny.stamp.lo);
+            uint16_t num = be16toh(tiny.stamp.num);
+            uint16_t hi = be16toh(tiny.stamp.hi);
+            uint32_t created = be32toh(tiny.created); /* cedar time value */
+            uint32_t index = be32toh(tiny.index); // index into string table (long name)
+
+            struct MapEntry128 *mep = &map->entries[i]; //  nameStart(map, i) = loc_index;
+            mep->stamp.lo = lo;     // a[0]
+            mep->stamp.num = num;   // a[1]
+            mep->stamp.hi = hi;     // a[2]
+            mep->created = created; // a[3..4]
+            mep->index = index;     // a[5..6]
 	}
 
+        // could block read [uint16_t x nEntries] here
+        // but then we'd need a 2nd copy (buffer)
 	for (int i = 0; i < nEntries; ++i) {
+            // could read a uint16_t here and then be16toh that value
+            // int16, 2 bytes
 	    int c1 = getc(fd);
 	    int c2 = getc(fd);
 	    if (c1 == EOF || c2 == EOF) goto bad;
-	    map->shortNames[i] = (c1 << 8) | c2;
+            int name_index = (c1 << 8) | c2;
+	    map->shortNames[i] = name_index; // index into string table (short name)
 	}
+
+        // now get nChars!
     }
 
     long zz = fread(map->names, 1, nChars, fd);
@@ -559,7 +642,7 @@ void setMapName(char *name) {
 void DumpStab() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
-        uint32_t entry_index = cedarMap->locationIndex[i];
+        int entry_index = cedarMap->locationIndex[i];
         struct MapEntry128 *mep = &cedarMap->entries[entry_index];
         int stab_index = mep->index;
 
