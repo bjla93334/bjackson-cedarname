@@ -116,7 +116,7 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
     if (debug) {
         // tm_year since 1900
         // tm_mon 0-11
-        printf("%04d-%02d-%02d %02d:%02d:%02d UTC",
+        fprintf(stderr, "%04d-%02d-%02d %02d:%02d:%02d UTC",
            utc_time.tm_year + 1900,
            utc_time.tm_mon + 1,
            utc_time.tm_mday,
@@ -139,6 +139,8 @@ static void DumpEntry(struct Map *map, int i) {
     uint16_t hi = stamp.hi;
     uint16_t extra = stamp.extra;
 
+    int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
+
     uint32_t created = mep->created;
     // leap year ??
     uint64_t utc = (-24*60*60) + (-2*365*24*60*60) + (uint64_t) created;
@@ -159,8 +161,11 @@ static void DumpEntry(struct Map *map, int i) {
     char canon[1024];
     fetchCanon(map, i, canon);
 
+    printf("Entry #%d %08x %s %s (%d, %ld)\n", i, entry_stamp, canon, calendar, created, utc);
+
+    int debug = opt_set(OPT_DEBUG);
     // FIXME : perhaps use JSON and have this be a feature ?
-    printf(
+    if (debug) fprintf(stderr,
         " i: %d"
         "\ncanon: %s"
         "\n%08x stab: %d"
@@ -231,7 +236,7 @@ void insertLocation(struct Map *map, int *table, int current_len) {
     int newbie_index = current_len;
     char newbie[1024];
     fetchCanon(map, newbie_index, newbie);
-    // printf("%d %s\n", newbie_index, newbie);
+    // fprintf(stderr, "%d %s\n", newbie_index, newbie);
 
     // FiXME : shouldn't assume max-len
     char opponent[1024];
@@ -241,7 +246,7 @@ void insertLocation(struct Map *map, int *table, int current_len) {
         int opponent_index = table[finger-1];
         fetchCanon(map, opponent_index, opponent);
         int placing = strcmp(newbie, opponent); // who cares about matches ??
-        // printf("%d %s %d\n", newbie_index, newbie, placing);
+        // fprintf(stderr, "%d %s %d\n", newbie_index, newbie, placing);
 
         // if (newbie > opponent) break;
         if (placing > 0) break;
@@ -276,7 +281,7 @@ static int checkHeaderLine(char *body, long body_count) {
     ;
 
     if (debug) {
-        printf("names : %ld %ld %ld %ld %ld : %ld\n", 
+        fprintf(stderr, "names : %ld %ld %ld %ld %ld : %ld\n", 
             sizeof(struct MapEntry128), sizeof(uint32_t),
             nEntries, nChars,
             total, body_count
@@ -292,9 +297,11 @@ static int checkHeaderBlock(char *body, long body_count) {
     int hstamp = be32toh((header[0] << 16) | header[1]);
     int nEntries = be32toh((header[2] << 16) | header[3]);
 
+    int debug = opt_set(OPT_DEBUG);
+    if (debug) fprintf(stderr, "body_count %ld\n", body_count);
+
     // header: [dee3, 2e01] 19850206
     // header: [dc05, 0000] 1500
-    int debug = opt_set(OPT_DEBUG);
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[0], header[1], hstamp); }
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[2], header[3], nEntries); }
     // map->hstamp = hstamp;
@@ -331,7 +338,7 @@ static struct Map *ReadMap(char *name) {
     // fprintf(stderr, "%s : %s(%ld)\n", name, "bad key", key);
 
     // another possible feature : dump version map stats:
-    // printf("first line : %ld %ld %ld\n", key, nEntries, nChars);
+    // fprintf(stderr, "first line : %ld %ld %ld\n", key, nEntries, nChars);
 
     struct Map *map = (struct Map *) malloc(sizeof(*map));
     map->hstamp = key;
@@ -345,18 +352,18 @@ static struct Map *ReadMap(char *name) {
 
     map->locationIndex = (int *) malloc(nEntries * sizeof(int));
 
-    // printf("map : %ld %ld\n", map->nEntries, map->nChars);
+    // fprintf(stderr, "map : %ld %ld\n", map->nEntries, map->nChars);
 
     // table of MapEntry
     // table of shortNames
     // stab
     if (key == LongKey) {
         long xx = fread(map->entries, sizeof(struct MapEntry128), nEntries, fd);
-        // printf("LongKey entries : %ld\n", xx);
+        // fprintf(stderr, "LongKey entries : %ld\n", xx);
         if (xx != nEntries) goto bad;
 
         long yy = fread(map->shortNames, sizeof(uint32_t), nEntries, fd);
-        // printf("LongKey shortNames : %ld\n", yy);
+        // fprintf(stderr, "LongKey shortNames : %ld\n", yy);
         if (yy != nEntries) goto bad;
 
         FixMap128(map);
@@ -416,7 +423,7 @@ static int CompareStamp64(struct Map *map, int version, int index) {
     int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
     int distance = version - entry_stamp;
 
-    // printf("CompareStamp64 %d %04x %04x %d\n", index, version, entry_stamp, distance);
+    // fprintf(stderr, "CompareStamp64 %d %04x %04x %d\n", index, version, entry_stamp, distance);
     return distance;
 }
 
@@ -428,7 +435,7 @@ static int FindStamp64(struct Map *map, int version) {
     while (lo <= hi) {
 	int index = (lo + hi) / 2;
 
-        // printf("FindStamp64 %d %d %d\n", lo, hi, index);
+        // fprintf(stderr, "FindStamp64 %d %d %d\n", lo, hi, index);
 	int r = CompareStamp64(map, version, index);
 	if (r < 0) {
 	    if (lo == index) break;
@@ -453,7 +460,7 @@ static int ShortNameFind(struct Map *map, char *name) {
     while (lo <= hi) {
 	int index = (lo + hi) / 2;
 
-        // printf("ShortNameFind %d %d %d\n", lo, hi, index);
+        // fprintf(stderr, "ShortNameFind %d %d %d\n", lo, hi, index);
 	int r = CompareInPlace(map, name, map->shortNames[index]);
 	if (r < 0) {
 	    if (lo == index) break;
@@ -480,7 +487,7 @@ static int CompareInPlace(struct Map *map, char *name, int index) {
         end = follower->index - 1;
     }
 
-    // printf("CompareInPlace %d %d %d\n", start, end, 0);
+    // fprintf(stderr, "CompareInPlace %d %d %d\n", start, end, 0);
 
     /* Search backward for beginning of short name or version marker. */
     int ver = 0;
@@ -494,7 +501,7 @@ static int CompareInPlace(struct Map *map, char *name, int index) {
     if (ver != 0) end = ver;
     if (snStart != 0) start = snStart;
 
-    // printf("CompareInPlace2 %d %d %d\n", start, end, end - start);
+    // fprintf(stderr, "CompareInPlace2 %d %d %d\n", start, end, end - start);
     int xlen = end - start;
 
     return strncasecmp(name, map->names + start, end - start);
@@ -589,14 +596,14 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
     char *p = strrchr(name, '/');
     if (p == NULL) p = name; else ++p; // skip prefix
 
-    // printf("vermap_Translate: %s\n", name);
+    // fprintf(stderr, "vermap_Translate: %s\n", name);
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     char *res = vermap_Lookup(cedarMap, p);
     return res;
 }
 
 char *vermap_LookupStamp64(int stamp) {
-    // printf("vermap_Translate: %s\n", name);
+    // fprintf(stderr, "vermap_Translate: %s\n", name);
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     int stamp_index = FindStamp64(cedarMap, stamp);
 
