@@ -28,12 +28,20 @@ Each file object has 3 attributes :
     a "create date" (aka mtime), and
     a (48-bit) "version stamp".
 
+# Location(s)
+
 A location (aka pathname) is a bit complicated, informally think of it as being an IFS name of the form :
+
     [server]<directory>subdirs>shortname!version
 
-The shortname is further structured as a (base, ext) pair separted by a dot (.) which base doesn't contain any dots, but ext may (ugh/yuck).  For the purposes of 'cedarname' we only have to worry about the shortname.
+The shortname is further structured as a (base, ext) pair separted by a dot (.) where base doesn't contain any dots, but ext may (ugh/yuck).  For the purposes of 'cedarname' we only have to worry about the shortname.
 
-As you might expect - everyone, even Cedar, has their own notion of time.  Thankfully, Cedar is similar to unix and instances of time have integer values, representing a (unique) distance / interval from a fixed 'epoch' value (i.e. 0).  Sadly, Cedar's BasicTime epoch differs from the de-facto unix value, so an adjustment value is added to compensate so that we can use unix/posix utilities to express the numeric value as a "calendar string" which users prefer (!!) when trying to understand when instances of time happened.
+# Representing Time
+
+As you might expect - everyone, even Cedar, has their own notion of time.  Thankfully, Cedar is similar to unix and instances of time have integer values, representing a (unique) distance / interval from a fixed 'epoch' value (i.e. 0).
+Sadly, Cedar's BasicTime epoch differs from the de-facto unix value, so an adjustment value is added to compensate so that we can use unix/posix utilities to express the numeric value as a "calendar string" which users prefer (!!) when trying to understand when instances of time happened.
+
+# Version Stamps
 
 Version Stamps are GUID's, which are constructed (pseudo) 'randomly'.
 There seems to be some fuzzyness around how various Cedar releases implemented GUIDs,
@@ -42,12 +50,49 @@ for the present release (Cedar 10.1), 64 bits are available in the data, but onl
 # VersionMap data
 
 Ignoring for the moment byte-order issues (network vs. host, big vs little),
-The VersionMap file (data) has 3 sections : the shortname 'index', the file entry list, and a compact character table (stab).  Oh, and the first "line" which indicates how many entries there are.
+The VersionMap file (data) has 3 sections :
+the shortname 'index',
+the file entry list,
+and a compact character table (stab).i
+Oh, and the first "line" which indicates how many entries there are.
 
-The file entry list contains the tuples, with the location string represented as a numeric reference into the stab so that the records are fixed length.  There's a trick being done with the character table where the variable llength strings are a sequential log, and there's an extra (null) file entry that supplies the "following index" for the last location string.  So, location string length is computed by using the 'start' from the file entry and the "just after" from the successor file entry.  This means you don't have to compute how long the character table is - that's done once when the file is read into memory.
+The file entry list contains the tuples, with the location string represented as a numeric reference into the stab so that the records are fixed length.
+There's a trick being done here in 'cedarname' with the character table where the variable length strings are a sequential log, and there's an extra (null) file entry added when reading the data file that supplies the "following index" for the last location string.
+Location string length is computed by using the 'start' from the file entry and it's "follower" start entry.
+This means you don't have to check how long the character table is - that's done once when the file is read into memory.
 
-The file entry list is kept in 'stamp' order, and the shortname list is kept in alphabetical order.
+NOTE : I'm about to change that!
+
+The file entry list is kept in 'stamp' order, and
+the shortname list is kept in alphabetical order.
+
 The 2 maps can therefore be quickly accessed using a binary search algorithm.
+
+# Endian-ness philosophy
+
+Oh, so I admit it.  I was lazy.  The original task was just to get cedarname working
+well enough so that I could use it on my linux host and avoid running within a SPARC32 qemu enironment.
+
+Now my ambitions have grown and I'd like to be able use it with 'other' maps.
+In particular, I'd like to leverage the Alto IFS archives for older Cedar releases.
+To do that I've gotta generalize the code more, and I'd really rather not invest tons of effort right now
+to sort out all the VersionMap formats that ever existed.
+I'm gonna pick 'em off one at a time (maybe).
+
+I also don't really want to use a 'serdes' mindset when reading in the binary file(s).
+
+# A different way of looking at things
+
+In stead of fighting to get things sorted out while doing I/O,
+I'm using a long standing approach of mine - just inhale the whole file,
+and then deal with things.
+
+# Two options : in-memory data conversion w/copy, or 'getter' endian conversion.
+
+I haven't made up my mind yet but ...  when I consider choosing, I know I'm going to have
+to write per-version conversion functions.  That might favor data copy.
+I'm tempted to be "object oriented" here an group conversions into an accessor object (or a conversion object).
+Still mulling things over ...
 
 # Original Definitive Reference for VersionMap and DF's - CSL-82-7, pg 85, Fig 4.3
 
@@ -92,10 +137,11 @@ candidates vying for frontrunning or 'winner' status.
 Clearly, 32-bit SPARC and SunOS 4.1.4 have been dead for a while.  Today (2026),
 x86_64 is the clear cpu winner (although there's movement in the direction of ARM).
 
-# Quick test
+# Quick test(s)
 
 There's two very obvious things folks will be interested in,
-so let's use them for testing :
+the location lookup (original functionality), and then for the
+more curious minded, the internal details, so let's use them for testing :
 
     ./cedarname /r/PFS.mesa
     ./cedarname /r/Rope.mesa
@@ -106,6 +152,18 @@ so let's use them for testing :
     ./cedarname --dumpSorted
     ./cedarname --dumpPrefixMap
     ./cedarname --dumpStab
+
+# Lookup by Stamp
+
+Now that I've read Eric's thesis, and imagined what
+things were like in the "olden days", I've gone ahead
+and begun to implement :
+
+    vermap_LookupStamp64
+
+I just tossed this together w/o deep thinking.
+It seems to work, but I don't know where the offbyon[e] (x-1),
+thingy came from ??
 
 # ugh, other map file format(s)
 
@@ -124,8 +182,13 @@ map.entries,
 map.shortNameSeq,
 namesChars
 
+# Cedar6.1 Implementation
+
+First, Kudo's to Russ Atkinson ; I love reading his code.
+If people like my code style, bonus points for Russ.
+
 MyVersion: INT = 19850206; -- 012E.E3DE
-    Every saved version stamp file needs this number at its start.
+    -- Every saved version stamp file needs this number at its start.
     We got this number from the date February 6, 1985, and
     we suggest that future versions also use this convention for generating this number.
 
@@ -166,7 +229,7 @@ SaveMapToFile: PUBLIC PROC [map: Map, name: ROPE] = TRUSTED {
 
     Hmmm, stab ordering isn't what I expected ??
     Symbol Table starts with : "[Cedar10.1]<Top>", and does end at MMMKeyboard.mesa!2
-    there's CR's between values
+    there's CR's between values and it's one big Rope (not ansi-C strings with NUL chars)
 
     0 17 [Cedar10.1]<Phoenix>PhSwitchImpl.mesa!1
     1 57 [Cedar10.1]<Commands>SlateSessions.command!1
