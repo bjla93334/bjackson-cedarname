@@ -69,8 +69,8 @@ struct __attribute__((packed)) Stamp48 {
 
 struct __attribute__((packed)) MapEntry112 {
     struct Stamp48 stamp;
-    uint32_t created;		/* cedar time value */
-    uint32_t index;		/* index of first char of long name */
+    uint16_t created[2];        /* cedar time value */
+    uint16_t index[2];		/* index of first char of long name */
 };
 
 struct Map {
@@ -95,15 +95,42 @@ static int nameLast(struct Map *map, int i) {
     return mep->index - 1;
 }
 
+static void DumpEntry(struct Map *map, int i); // ugh, recursive!
+
 // FIXME : max len?
 // assert w/checking, or scan the stab and detect max length
 static void fetchCanon(struct Map *map, int i, char *buf) {
     int start = nameStart(map, i);
     int end = nameLast(map, i);
     int nbytes = end - start;
+
+    int debug = opt_set(OPT_DEBUG);
+    // if (debug) fprintf(stderr, "fetch: %d..%d %d\n", start, end, nbytes);
+
+    int rope_len = map->nChars;
+
+    if (start >= rope_len) {
+        fprintf(stderr, "out-of-bounds : %s, %d\n", "start", start);
+        goto bad;
+    }
+
+    if (end > rope_len) {
+        fprintf(stderr, "out-of-bounds : %s, %d\n", "end", end);
+        goto bad;
+    }
+
+    if (nbytes > 100) {
+        fprintf(stderr, "out-of-bounds : %s, %d\n", "nbytes", nbytes);
+        goto bad;
+    }
+
     // assert(nbytes < 1024);
     strncpy(buf, map->names + start, nbytes);
     buf[nbytes] = 0;
+    return;
+bad:
+    strncpy(buf, "bogus", 6);
+    // DumpEntry(map, i);
 }
 
 // time_t epoch_time = 1784419200; (e.g., Tuesday, August 18, 2026)
@@ -127,6 +154,16 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
     }
 }
 
+/*
+   'created' is a BasicTime - seconds since 1901 / 1968 ; so wrong unix epoch
+   Alto: 1901 to 2036
+   XNS: 1968 to 2103 (Alto offset to 1968)
+
+    1991-05-13 14:05:58.000000000 -0700 /r/Tioga.tip
+   -2208988800 UTC: Monday, January 1, 1900 at 12:00:00 AM
+   -63158400 UTC: Monday, January 1, 1968 at 12:00:00 AM
+   0 UTC: Thursday, January 1, 1970 at 12:00:00 AM
+*/
 static void DumpEntry(struct Map *map, int i) {
     uint32_t stab = map->shortNames[i]; // arg to CompareInPlace()
 
@@ -142,18 +179,8 @@ static void DumpEntry(struct Map *map, int i) {
     int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
 
     uint32_t created = mep->created;
-    // leap year ??
-    uint64_t utc = (-24*60*60) + (-2*365*24*60*60) + (uint64_t) created;
-    /*
-       'created' is a BasicTime - seconds since 1901 / 1968 ; so wrong unix epoch
-       Alto: 1901 to 2036
-       XNS: 1968 to 2103 (Alto offset to 1968)
-
-        1991-05-13 14:05:58.000000000 -0700 /r/Tioga.tip
-       -2208988800 UTC: Monday, January 1, 1900 at 12:00:00 AM
-       -63158400 UTC: Monday, January 1, 1968 at 12:00:00 AM
-       0 UTC: Thursday, January 1, 1970 at 12:00:00 AM
-    */
+    int fudge = (-24*60*60) + (-2*365*24*60*60); // leap year ??
+    uint64_t utc = fudge + (uint64_t) created;
     char buffer[80];
     format_utc(utc, buffer, sizeof(buffer));
     char *calendar = buffer;
@@ -340,20 +367,21 @@ static int checkHeaderBlock(char *body, long body_count, struct Map *map) {
 static int TryRawHeader(FILE *fd, struct Map *map) {
     rewind(fd);
 
-    uint16_t header[4];
+    uint16_t header[3];
     long yy = fread(header, sizeof(header), 1, fd);
 
     int debug = opt_set(OPT_DEBUG);
     if (debug) { fprintf(stderr, "yy: %ld, %ld\n", yy, sizeof(header)); }
     if (yy != 1) return 0;
 
-    for (int i = 0; i < 4; i++) { header[i] = be16toh(header[i]); }
+    for (int i = 0; i < 3; i++) { header[i] = be16toh(header[i]); }
+
     int hstamp = (header[1] << 16) | header[0];
-    int nEntries = (header[3] << 16) | header[2];
+    int nEntries = header[2];
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[1], header[0], hstamp); }
-    if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[3], header[2], nEntries); }
+    if (debug) { fprintf(stderr, "header: [%04x] %d\n", header[2], nEntries); }
     // header: [012e, e3de] 19850206
-    // header: [0000, 05dc] 1500
+    // header: [05dc] 1500
 
     // map->hstamp = hstamp;
     // map->nEntries = nEntries;
@@ -466,15 +494,19 @@ if (old_trash) {
             uint16_t lo = be16toh(tiny.stamp.lo);
             uint16_t num = be16toh(tiny.stamp.num);
             uint16_t hi = be16toh(tiny.stamp.hi);
-            uint32_t created = be32toh(tiny.created); /* cedar time value */
-            uint32_t index = be32toh(tiny.index); // index into string table (long name)
+            uint16_t c0 = be16toh(tiny.created[0]);
+            uint16_t c1 = be16toh(tiny.created[1]);
+            uint16_t si0 = be16toh(tiny.index[0]);
+            uint16_t si1 = be16toh(tiny.index[1]);
+            uint32_t created = (c1 << 16) | c0;
+            uint32_t index = (si1 << 16) | si0;
 
             struct MapEntry128 *mep = &map->entries[i]; //  nameStart(map, i) = loc_index;
             mep->stamp.lo = lo;     // a[0]
             mep->stamp.num = num;   // a[1]
             mep->stamp.hi = hi;     // a[2]
-            mep->created = created; // a[3..4]
-            mep->index = index;     // a[5..6]
+            mep->created = created; // a[3..4] /* cedar time value */
+            mep->index = index;     // a[5..6] /* index into string table (long name) */
 	}
 
         long pos_names = ftell(fd);
@@ -494,25 +526,20 @@ if (old_trash) {
         long pos_nchar = ftell(fd);
 
         // now get nChars!
-        uint16_t rl_buf[2];
-        if (fread(rl_buf, sizeof(rl_buf), 1, fd) != 1) goto bad;
+        uint16_t thing;
+        if (fread(&thing, sizeof(thing), 1, fd) != 1) goto bad;
 
         int debug = opt_set(OPT_DEBUG);
-        // pos 8 21008 24008 24012 66296
         if (debug) fprintf(stderr, "pos %ld %ld %ld\n", pos_map, pos_names, pos_nchar);
 
-        int rl_lo = be16toh(rl_buf[1]);
-        int rl_hi = be16toh(rl_buf[0]);
-        int rope_len = (rl_hi << 16) | rl_lo;
+        int rope_len = be16toh(thing);
         if (debug) fprintf(stderr, "rope"
             " sz %ld"
-            " %04x lo %d"
-            " %04x hi %d"
+            " %04x thing %d"
             " len %d"
             "\n",
-            sizeof(rl_buf),
-            rl_lo, rl_lo,
-            rl_hi, rl_hi,
+            sizeof(thing),
+            thing, thing,
             rope_len
         );
 
