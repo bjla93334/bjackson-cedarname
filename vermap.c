@@ -374,6 +374,7 @@ static void DumpRope(char *p, int len) {
         putc(ch, stdout);
         if ((i % 40) == 39) printf("\n");
     }
+    printf("\n");
 }
 
 /* Read the version map from disk. */
@@ -539,7 +540,7 @@ if (old_trash) {
         goto bad;
     }
 
-    if (debug) DumpRope(map->names, 256);
+    if (debug) DumpRope(map->names, 200);
 
 // FIXME : remove this
 // follower
