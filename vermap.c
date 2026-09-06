@@ -116,7 +116,7 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
     if (debug) {
         // tm_year since 1900
         // tm_mon 0-11
-        fprintf(stderr, "%04d-%02d-%02d %02d:%02d:%02d UTC",
+        fprintf(stderr, "%04d-%02d-%02d %02d:%02d:%02d UTC\n",
            utc_time.tm_year + 1900,
            utc_time.tm_mon + 1,
            utc_time.tm_mday,
@@ -310,32 +310,33 @@ static int checkHeaderBlock(char *body, long body_count, struct Map *map) {
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[2], header[3], nEntries); }
     if (hstamp != ShortKey) return -1;
 
-    // od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
-    // 0056700 8900 3402 6402 2ba5 0000 435b 6465 7261
-    // 2ba5 0000 - 42283
-
 // FIXME : remove this junk
-    if (debug)  {
+    int dead = 0;
+    if (dead)  {
+        // od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
+        // 0056700 8900 3402 6402 2ba5 0000 435b 6465 7261
+        // 2ba5 0000 - 42283
+
         int offset = 0056700; // from od, approx
         int nChars = 42283;
         // map->hstamp = hstamp;
         // map->nChars = nChars;
-        fprintf(stderr, "0x%08x %d nChars %d %d\n", hstamp, hstamp, nChars, offset);
-
-        int bulk = body_count - nChars;
-        int grain = bulk / nEntries;
+        fprintf(stderr, "0x%08x %d nChars %d @ %d\n", hstamp, hstamp, nChars, offset);
 
         // 0x012ee3de 19850206 nChars 42283 24000
         // bulk 24013, grain 16 bits 128
+        int bulk = body_count - nChars;
+        int grain = bulk / nEntries;
         fprintf(stderr, "bulk %d, grain %d bits %d\n", bulk, grain, grain * 8);
     }
 
     map->hstamp = hstamp;
     map->nEntries = nEntries;
     map->nChars = -1;
-    return 0;
+    return 0; // well-formed
 }
 
+// all this to just skip 8 bytes!
 static int TryRawHeader(FILE *fd, struct Map *map) {
     rewind(fd);
 
@@ -353,10 +354,26 @@ static int TryRawHeader(FILE *fd, struct Map *map) {
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[3], header[2], nEntries); }
     // header: [012e, e3de] 19850206
     // header: [0000, 05dc] 1500
-    map->hstamp = hstamp;
-    map->nChars = -1;
-    if (hstamp == ShortKey) return nEntries;
+
+    // map->hstamp = hstamp;
+    // map->nEntries = nEntries;
+    // map->nChars = -1;
+
+    if (hstamp != ShortKey) return -1;
+
     return 0;
+}
+
+// [Cedar]<Cedar6.1>
+// PCRuntime>LupineRuntime.mesa!1
+static void DumpRope(char *p, int len) {
+    printf("\nrope:\n");
+    for (int i = 0; i < len; i++) {
+        char ch = p[i];
+        if (ch == '\r') ch = '|';
+        putc(ch, stdout);
+        if ((i % 40) == 39) printf("\n");
+    }
 }
 
 /* Read the version map from disk. */
@@ -368,11 +385,14 @@ static struct Map *ReadMap(char *name) {
 
     int v0 = checkHeaderBlock(body, body_count, map);
     int v1 = checkHeaderLine(body, body_count, map);
-    if ((v0 < 0) && (v1 < 0)) exit(0);
+    if ((v0 < 0) && (v1 < 0)) goto bad;
 
+    // in theory, only one of the checkHeader method sets these!
     int key = map->hstamp;
     int nEntries = map->nEntries;
-    int nChars = map->nChars;
+
+    int debug = opt_set(OPT_DEBUG);
+    if (debug) fprintf(stderr, "key %d nEntries %d\n", key, nEntries);
 
     FILE *fd = fopen(name, "r");
     if (fd == NULL) { perror(name); }
@@ -401,8 +421,6 @@ if (old_trash) {
 // FIXME : gonna remove this shortly
     map->entries = (struct MapEntry128 *) malloc((nEntries + 1) * sizeof(struct MapEntry128));
     map->shortNames = (uint32_t *) malloc(nEntries * sizeof(uint32_t));
-    map->names = (char *) malloc(nChars);
-
     map->locationIndex = (int *) malloc(nEntries * sizeof(int));
 
     // fprintf(stderr, "map : %ld %ld\n", map->nEntries, map->nChars);
@@ -431,12 +449,17 @@ if (old_trash) {
     else {
         // start again
         rewind(fd);
-        int nEntries2 = TryRawHeader(fd, map);
+        int bb = TryRawHeader(fd, map);
+        if (bb < 0) goto bad;
+
+        // long nEntries =  map->nEntries;
+
+        long pos_map = ftell(fd);
 
         /* others : a[0-4] don't matter */
         // au contraire mon-ami!
         struct MapEntry112 tiny; // 7 words, 14 bytes
-	for (int i = 0; i < nEntries; ++i) {
+	for (int i = 0; i < nEntries; i++) {
 	    if (fread(&tiny, sizeof(tiny), 1, fd) != 1) goto bad;
             // deal with endian-ness, one entry at a time
             uint16_t lo = be16toh(tiny.stamp.lo);
@@ -453,9 +476,11 @@ if (old_trash) {
             mep->index = index;     // a[5..6]
 	}
 
+        long pos_names = ftell(fd);
+
         // could block read [uint16_t x nEntries] here
         // but then we'd need a 2nd copy (buffer)
-	for (int i = 0; i < nEntries; ++i) {
+	for (int i = 0; i < nEntries; i++) {
             // could read a uint16_t here and then be16toh that value
             // int16, 2 bytes
 	    int c1 = getc(fd);
@@ -465,13 +490,56 @@ if (old_trash) {
 	    map->shortNames[i] = name_index; // index into string table (short name)
 	}
 
+        long pos_nchar = ftell(fd);
+
         // now get nChars!
+        uint16_t rl_buf[2];
+        if (fread(rl_buf, sizeof(rl_buf), 1, fd) != 1) goto bad;
+
+        int debug = opt_set(OPT_DEBUG);
+        // pos 8 21008 24008 24012 66296
+        if (debug) fprintf(stderr, "pos %ld %ld %ld\n", pos_map, pos_names, pos_nchar);
+
+        int rl_lo = be16toh(rl_buf[1]);
+        int rl_hi = be16toh(rl_buf[0]);
+        int rope_len = (rl_hi << 16) | rl_lo;
+        if (debug) fprintf(stderr, "rope"
+            " sz %ld"
+            " %04x lo %d"
+            " %04x hi %d"
+            " len %d"
+            "\n",
+            sizeof(rl_buf),
+            rl_lo, rl_lo,
+            rl_hi, rl_hi,
+            rope_len
+        );
+
+        map->nChars = rope_len;
+        // map->nChars = 42283;
     }
 
+    long pos_rope = ftell(fd);
+
+    int nChars = map->nChars;
+
+    // read stab 23363
+    if (debug) { fprintf(stderr, "read stab @ %ld %d\n", pos_rope, nChars); }
+    if (nChars <= 0) goto bad;
+
+    map->names = (char *) malloc(nChars);
     long zz = fread(map->names, 1, nChars, fd);
+    long pos_end = ftell(fd);
+
+    if (debug) fprintf(stderr, "stab pos %ld %ld %ld\n", pos_rope, pos_end, body_count);
+
+    // bytes read 23363
+    if (debug) fprintf(stderr, "bytes read %ld\n", zz);
     if (zz != nChars) {
         goto bad;
     }
+
+    if (debug) DumpRope(map->names, 256);
 
 // FIXME : remove this
 // follower
@@ -483,16 +551,19 @@ if (old_trash) {
     fclose(fd);
 
     // build locationIndex, ordered appropriately
-    for (int i = 0; i < map->nEntries; i++) {
+    for (int i = 0; i < nEntries; i++) {
         insertLocation(map, map->locationIndex, i);
     }
     return map;
 bad:
-    free(map->names);
-    free(map->shortNames);
-    free(map->entries);
-    free(map->locationIndex);
-    free(map);
+    if (body) free(body);
+    if (map) {
+        if (map->names) free(map->names);
+        if (map->shortNames) free(map->shortNames);
+        if (map->entries) free(map->entries);
+        if (map->locationIndex) free(map->locationIndex);
+        free(map);
+    }
     fclose(fd);
     // fprintf(stderr, "%s : map read error\n", name);
     return NULL;

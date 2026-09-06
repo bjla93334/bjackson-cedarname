@@ -165,19 +165,95 @@ I just tossed this together w/o deep thinking.
 It seems to work, but I don't know where the offbyon[e] (x-1),
 thingy came from ??
 
+# Cedar size definitions, check IFS archives
+
+    /cyan/cedar6.1/mesaruntime/.Basics.mesa!1.html
+    ./cedarname /r/Basics.mesa
+
 # ugh, other map file format(s)
 
     ./cedarname --debug --mapFile data/CedarSource.VersionMap\!34  /r/Rope.mesa
 
-# Bah!
+# Bah! - data/CedarSource.VersionMap
 
-/cyan/cedar6.1/versionmap/VersionMapImpl.mesa!1
+I've got some silly bug hiding from me,
+use the big hammer (od) to bench check this.
 
-od -t x1 data/CedarSource.VersionMap\!34 | head
+0000000 2e01dee3 0000dc05 449e2200 3e20a26d
+0000020 00001200 49000000 c96d6a9e 32006420
+0000040 00000000 b19e9500 ab20156e 00004a00
+0000060 af000000 2f6e879e 64008120 00000000
+
+0000000 dee3 2e01 dc05 0000 2200 449e a26d 3e20
+0000020 1200 0000 0000 4900 6a9e c96d 6420 3200
+0000040 0000 0000 9500 b19e 156e ab20 4a00 0000
+0000060 0000 af00 879e 2f6e 8120 6400 0000 0000
+
 0000000 e3 de 01 2e 05 dc 00 00 00 22 9e 44 6d a2 20 3e
+0000020 00 12 00 00 00 00 00 49 9e 6a 6d c9 20 64 00 32
+0000040 00 00 00 00 00 95 9e b1 6e 15 20 ab 00 4a 00 00
+0000060 00 00 00 af 9e 87 6e 2f 20 81 00 64 00 00 00 00
 
-od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
-0056700 8900 3402 6402 . 2ba5 0000 435b 6465 7261 (xx) "C[dera.."
+# debug info
+
+version:  header: [dee3, 2e01] 19850206 (February 6, 1985)
+nEntries: header: [dc05, 0000] 1500
+
+map.entries,
+map.shortNameSeq,
+namesChars
+
+checking file positions:
+
+    pos 8 21008 24008 24012 47375 66296
+
+# header and first 3 map entries :
+
+0000000
+e3 de 01 2e 05 dc 00 00 / dee3 2e01 dc05 0000 / 2e01dee3 0000dc05 - header
+
+0000010
+00 22 9e 44 6d a2 20 3e / 2200 449e a26d 3e20 / 449e2200 3e20a26d - entry[0]
+00 12 00 00 00 00 00 49 / 1200 0000 0000 4900 / 00001200 49000000
+9e 6a 6d c9 20 64 00 32 / 6a9e c96d 6420 3200 / c96d6a9e 32006420
+00 00 00 00 00 95 9e b1 / 0000 0000 9500 b19e / 00000000 b19e9500
+6e 15 20 ab 00 4a 00 00 / 156e ab20 4a00 0000 / ab20156e 00004a00
+00 00 00 af 9e 87 6e 2f / 0000 af00 879e 2f6e / af000000 2f6e879e
+20 81 00 64 00 00 00 00 / 8120 6400 0000 0000 / 64008120 00000000
+
+stamp:   [2200 449e a26d]
+created: [3e20 1200]
+index:   [0000 0000]
+
+stamp:   [4900 6a9e c96d]
+created: [6420 3200]
+index:   [0000 0000]
+
+stamp:   [9500 b19e 156e]
+created: [ab20 4a00]
+index:   [0000 ]
+
+# names
+
+from start : 8 + (1500 * 14) : 21008
+from end   : 24008 - (1500 * 2) : 21008
+
+    --skip-bytes 21016
+
+od --address-radix d --skip-bytes 21008 -t x2 data/CedarSource.VersionMap!34 | head
+
+cf04 8200 2200 5501 0204 0703 4802 cd02
+8d01 0302 b500 6d02 9903 4805 1e02 2404
+1902 1f02 7003 7203 f000 2802 ac00 bd00
+
+# Stab
+pos 8 21008 24008
+rope sz 4 5b43 lo 23363 0000 hi 0 len 23363
+read stab @ 24012 23363
+stab pos 24012 47375 66296
+
+
+    --skip-bytes 24006
 
     nChars [2ba5 0000] : 42283
     [Cedar]<Cedar6.1>[Cedar]<Cedar6.1>
@@ -185,16 +261,22 @@ od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
     ...
     MakeBoot>MakeMakeBoot.cm!1
 
-version: [dee3 2e01],
-nEntries: [dc05 0000],
-map.entries,
-map.shortNameSeq,
-namesChars
+od --address-radix d --skip-bytes 24000 -t x2 -c data/CedarSource.VersionMap!34 | head
+0024000    8900    3402    6402    2ba5    0000    435b    6465    7261
+         \0 211 002   4 002   d 245   +  \0  \0   [   C   e   d   a   r
+0024016    3c5d    6543    6164    3672    312e    0d3e    5052    5243
+          ]   <   C   e   d   a   r   6   .   1   >  \r   R   P   C   R
+0024032    6e75    6974    656d    4c3e    7075    6e69    5265    6e75
+          u   n   t   i   m   e   >   L   u   p   i   n   e   R   u   n
+0024048    6974    656d    6d2e    7365    2161    0d31    6954    676f
+          t   i   m   e   .   m   e   s   a   !   1  \r   T   i   o   g
 
 # Cedar6.1 Implementation
 
 First, Kudo's to Russ Atkinson ; I love reading his code.
 If people like my code style, bonus points for Russ.
+
+/cyan/cedar6.1/versionmap/VersionMapImpl.mesa!1
 
 MyVersion: INT = 19850206; -- 012E.E3DE
     -- Every saved version stamp file needs this number at its start.
