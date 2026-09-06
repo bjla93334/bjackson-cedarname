@@ -109,7 +109,50 @@ so let's use them for testing :
 
 # ugh, other map file format(s)
 
-    ./cedarname --mapFile data/CedarSource.VersionMap\!34  /r/Rope.mesa
+    ./cedarname --debug --mapFile data/CedarSource.VersionMap\!34  /r/Rope.mesa
+
+# Bah!
+
+/cyan/cedar6.1/versionmap/VersionMapImpl.mesa!1
+
+od -t x1 data/CedarSource.VersionMap\!34 | head
+0000000 e3 de 01 2e 05 dc 00 00 00 22 9e 44 6d a2 20 3e
+
+version: [dee3 2e01],
+nEntries: [dc05 0000],
+map.entries,
+map.shortNameSeq,
+namesChars
+
+MyVersion: INT = 19850206; -- 012E.E3DE
+    Every saved version stamp file needs this number at its start.
+    We got this number from the date February 6, 1985, and
+    we suggest that future versions also use this convention for generating this number.
+
+SaveMapToFile: PUBLIC PROC [map: Map, name: ROPE] = TRUSTED {
+    st: IO.STREAM ← FS.StreamOpen[name, $create];
+    names: ROPE ← map.names;
+    namesChars: INT ← names.Size[];
+    len: NAT ← map.len;
+
+    myVersion: INT ← MyVersion;
+    IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@myVersion]], 0, SIZE[INT]*bytesPerWord]];
+        -- first, output the internal version number
+    IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@len]], 0, SIZE[NAT]*bytesPerWord]];
+        -- first, output the # of entries
+    IO.UnsafePutBlock[st, [LOOPHOLE[@map.entries[0]], 0, len*(SIZE[MapEntry]*bytesPerWord)]];
+        -- next, the entries themselves
+    IO.UnsafePutBlock[st, [LOOPHOLE[@map.shortNameSeq[0]], 0, len*(SIZE[CARDINAL]*bytesPerWord)]];
+        -- next, the shortNameSeq
+    IO.UnsafePutBlock[st, [LOOPHOLE[LONG[@namesChars]], 0, (SIZE[INT]*bytesPerWord)]];
+        -- next, the number of characters we are about to write (not counting the end marker)
+    IO.PutRope[st, names];
+        -- then the names rope
+    IO.PutRope[st, "\000\000\000"];
+        -- marker at end to make Tioga happy
+    IO.SetLength[st, IO.GetIndex[st]]; -- force goddamm truncation already!!!
+    IO.Close[st];
+};
 
 # Implementor Notes - Archaeology or Forensics ??
 

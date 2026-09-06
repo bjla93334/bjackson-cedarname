@@ -54,18 +54,18 @@ int main(int argc, char *argv[]) {
 	printf("%s\n", p);
     }
 
-    if (opt_set(OPT_DUMP_ALL)) { DumpAll(1); }
+    if (opt_set(OPT_DUMP_ALL)) { DumpAll(); }
     // OPT_DUMP_ENTRY,
     if (opt_set(OPT_DUMP_INDEX)) { DumpIndex(); }
-    if (opt_set(OPT_DUMP_SORTED)) { DumpSorted(1); }
+    if (opt_set(OPT_DUMP_SORTED)) { DumpSorted(); }
     if (opt_set(OPT_DUMP_PREFIXMAP)) { DumpPrefixMap(); }
     if (opt_set(OPT_DUMP_STAB)) { DumpStab(); }
 
     int something = 0;
     if (something) {
-        extern char *vermap_LookupStamp(int stamp);
+        extern char *vermap_LookupStamp64(int stamp);
         int duncan = 0x4ab6a9f8; // /r/Tioga.tip - stamp: 4ab6a9f8 4ab6 num: 19126 a9f8 hi: 43512
-        char *ifs_name = vermap_LookupStamp(duncan);
+        char *ifs_name = vermap_LookupStamp64(duncan);
         printf("Tioga.tip(%d) : %s %d 0x%x\n", duncan, ifs_name, duncan, duncan);
     }
 

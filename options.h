@@ -37,8 +37,8 @@ inline bool opt_set(enum flag_t flavor) {
 
 extern void setMapName(char *localFSName);
 
-extern void DumpAll(int swap);
+extern void DumpAll();
 extern void DumpIndex();
 extern void DumpPrefixMap();
-extern void DumpSorted(int swap);
+extern void DumpSorted();
 extern void DumpStab();
