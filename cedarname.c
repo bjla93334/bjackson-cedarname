@@ -14,6 +14,7 @@
 static char *cedarMapIFSName = "/Cedar/CedarVersionMap/CedarSource.VersionMap";
 
 int main(int argc, char *argv[]) {
+    // gotta be careful about init seq:
     char *localFSName = pfs_TranslateName(cedarMapIFSName);
     setMapName(localFSName);
 
