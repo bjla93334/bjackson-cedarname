@@ -8,6 +8,7 @@ extern int atoi(const char *);
 extern void *malloc(long unsigned int);
 extern char *getenv(const char *);
 
+#include "options.h"
 #include "pfs.h"
 
 #define TRUE			1
@@ -96,6 +97,8 @@ char *pfs_TranslateName(char *name) {
 
     pfs_errorMsg = NULL;
 
+    int debug = opt_set(OPT_DEBUG);
+
     char buf[MAXNAMELEN];
     char buf2[MAXNAMELEN];
     for (int i = 0; i < MAXPREFIXLOOKUPS; ++i) {
@@ -108,7 +111,8 @@ char *pfs_TranslateName(char *name) {
 
             for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) {
                 if (strncasecmp(name+1, fe->name, fe->length) == 0) {
-                    // printf("%s : trying %s\n", name, fe->name);
+                    // -vermapa:/Source/Rope.mesa : trying vermapa:
+                    if (debug) printf("%s : trying %s\n", name, fe->name);
                     return fe->translateProc(fe, p+1);
                 }
             }
@@ -121,10 +125,11 @@ char *pfs_TranslateName(char *name) {
         /* Need to do prefix map lookups. */
 
         strcpy(buf, name);
+        if (debug)  printf("prefix map match : %s\n", name);
 
         struct PrefixEntry *expanded = NULL;
         for (struct PrefixEntry *pe = prefixes; pe != NULL; pe = pe->next) {
-            // printf("prefix map expansion loop : %s\n", pe->name);
+            // if (debug) printf("prefix map expansion loop : %s -> %s\n", pe->name, pe->translation);
             if ((strncasecmp(pe->name, buf, pe->length) == 0)
             && (
                 (pe->length == 1)
@@ -138,7 +143,7 @@ char *pfs_TranslateName(char *name) {
                 strcpy(buf2 + len, buf + pe->length);
                 name = buf2;
                 expanded = pe;
-                // printf("prefix map match : %s\n", expanded->name);
+                if (debug) printf("prefix map rule  : %s -> %s\n", pe->name, pe->translation);
                 break;
             }
         }
@@ -168,11 +173,13 @@ static void InsertPE(struct PrefixEntry *newpe) {
 
 void DumpPrefixMap() {
     if (!pfsInited) InitPFS();
+    printf("PrefixMap:\n");
     for (struct PrefixEntry *pe = prefixes; pe != NULL; pe=pe->next) {
-        printf("%s(%d) %s\n", pe->name, pe->length, pe->translation);
+        printf("%s(%d) -> %s\n", pe->name, pe->length, pe->translation);
     }
 }
 
+// FIXME - called before debug option is set!
 static void InitPFS() {
     for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) fe->length = strlen(fe->name);
 
@@ -185,6 +192,7 @@ static void InitPFS() {
         InsertPE(pe);
     }
 
+    // pma /XeroxCedar ${XeroxCedar}
     char *xeroxCedar = getenv("XeroxCedar");
     if (xeroxCedar != NULL) {
         struct PrefixEntry *pe = (struct PrefixEntry *) malloc(sizeof(*pe));
@@ -197,17 +205,21 @@ static void InitPFS() {
 
     char *home = getenv("HOME");
     if (home != NULL) {
-        char buf[1024];
+        char buf[MAXNAMELEN];
         sprintf(buf, "%s/.cedar.pma", home);
         FILE *f = fopen(buf, "r");
         if (f != NULL) {
-            while (fgets(buf, sizeof(buf), f) != NULL) {
-                char command[1024];
-                char name[1024];
-                char translation[1024];
-                int count = sscanf(buf, "%s %s %s", command, name, translation);
+            int debug = opt_set(OPT_DEBUG);
+            if (debug) fprintf(stderr, "processing %s\n", buf);
 
+            while (fgets(buf, sizeof(buf), f) != NULL) {
+                char command[MAXNAMELEN];
+                char name[MAXNAMELEN];
+                char translation[MAXNAMELEN];
+                int count = sscanf(buf, "%s %s %s", command, name, translation);
                 if (count  != 3 || strcmp(command, "pma") != 0) continue;
+
+                if (debug) fprintf(stderr, "pma : %s -> %s\n", name, translation);
 
                 struct PrefixEntry *pe = (struct PrefixEntry *) malloc(sizeof(*pe));
                 pe->name = strsav(name);
@@ -220,7 +232,6 @@ static void InitPFS() {
         }
     }
 
-    if (0 == 1) DumpPrefixMap(); // DEBUG, should this be a feature ?
     pfsInited = TRUE;
 }
 
