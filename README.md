@@ -145,6 +145,8 @@ more curious minded, the internal details, so let's use them for testing :
 
     ./cedarname /r/PFS.mesa
     ./cedarname /r/Rope.mesa
+    ./cedarname /r/CedarSource.VersionMap
+    ./cedarname /r/VersionMapImpl.mesa
 
     ./cedarname --dumpEntry /r/Tioga.tip
     ./cedarname --dumpAll
@@ -330,6 +332,36 @@ SaveMapToFile: PUBLIC PROC [map: Map, name: ROPE] = TRUSTED {
 
     13 = 3 x NUL, header(8), nChars(2)
 
+# and, there's more :
+
+Unless I'm mistaken, 'prefix' here is the to be added to non-rooted entries!
+
+    IndexToFullName: PROC [map: Map, index: INT] RETURNS [ROPE] = {
+        -- return the full path name
+        names: ROPE ← map.names;
+        pos: INT ← names.Index[index, "\n"];
+        name: ROPE ← names.Substr[index, pos-index];
+
+        IF NOT Rope.Match["[*", name] THEN {
+            prepos: INT ← names.Index[0, "\n"];
+            prefix: ROPE ← names.Substr[0, prepos];
+            name ← prefix.Concat[name]
+        };
+
+        RETURN [name];
+    };
+
+# if !long ; ugh, always find it the last place you look
+
+dMapEntry: DMapEntry;
+dMapEntry[0] ¬ map.entries[i].stamp.lo;
+dMapEntry[1] ¬ map.entries[i].stamp.num;
+dMapEntry[2] ¬ map.entries[i].stamp.hi;
+dMapEntry[3] ¬ LOOPHOLE[map.entries[i].created, Basics.LongNumber].lo;
+dMapEntry[4] ¬ LOOPHOLE[map.entries[i].created, Basics.LongNumber].hi;
+dMapEntry[5] ¬ LOOPHOLE[map.entries[i].index, Basics.LongNumber].lo;
+dMapEntry[6] ¬ LOOPHOLE[map.entries[i].index, Basics.LongNumber].hi;
+IO.UnsafePutBlock[st, [LOOPHOLE[@dMapEntry], 0, BYTES[DMapEntry]] ];
 
 # Implementor Notes - Archaeology or Forensics ??
 
@@ -375,6 +407,28 @@ SaveMapToFile: PUBLIC PROC [map: Map, name: ROPE] = TRUSTED {
     enhancements may be required. It's also intended as an easy to understand illustration for folks
     who have no prior experience with Cedar.
 
+# Understanding PFS Prefix Mapping
+
+    ${HOME}/.cedar.pma
+
+    pma <name> <translation>
+
+    ./cedarname --dumpPrefixMap
+
+    /imagerfonts(12) -ux:/project/pcedar2.0/imagerfonts
+    /XeroxCedar(11) /home/bjackson/Desktop/CSL-93-16/Cedar
+    /XeroxCedar(11) -vux:/project/cedar10.1/
+    /cedar10.1(10) /XeroxCedar/release
+    /release(8) /XeroxCedar/release
+    /cedar(6) /XeroxCedar/release
+    /vux(4) -vux:/
+    /rx(3) -vermapx:/Source
+    /ux(3) -ux:/
+    /r(2) -vermapa:/Source
+    /(1) -ux:/
+
 # find this project on github
 
     https://github.com/bjla93334/bjackson-cedarname.git
+
+# EOF
