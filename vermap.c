@@ -10,11 +10,13 @@
 #include <string.h>
 #include <time.h>
 
+#define MAXNAMELEN 1024
+
 // RAM is cheap!
 // don't forget : free(buffer);
 char *snarf(char *pathname, long *flen) {
     FILE *fp = fopen(pathname, "rb");
-    if (fp == NULL) { perror("open"); return NULL; }
+    if (fp == NULL) { perror(pathname); return NULL; }
 
     fseek(fp, 0, SEEK_END);
     long file_length = ftell(fp);
@@ -81,6 +83,7 @@ struct Map {
     struct MapEntry128 *entries; /* the map entries */
     char *names;		/* all the names */
     int *locationIndex;         /* 'btree' of location names (not from map) */
+    char *prefix;               /* first stab entry */
 };
 
 // be less clever about last entry
@@ -119,14 +122,16 @@ static void fetchCanon(struct Map *map, int i, char *buf) {
         goto bad;
     }
 
-    if (nbytes > 100) {
+    // FIXME : max path length
+    if ((nbytes > 100) && (nbytes > 0)) {
         fprintf(stderr, "out-of-bounds : %s, %d\n", "nbytes", nbytes);
         goto bad;
     }
 
-    // assert(nbytes < 1024);
+    // assert(nbytes < MAXNAMELEN);
     strncpy(buf, map->names + start, nbytes);
     buf[nbytes] = 0;
+
     return;
 bad:
     strncpy(buf, "bogus", 6);
@@ -185,7 +190,7 @@ static void DumpEntry(struct Map *map, int i) {
     format_utc(utc, buffer, sizeof(buffer));
     char *calendar = buffer;
 
-    char canon[1024];
+    char canon[MAXNAMELEN] = {0};
     fetchCanon(map, i, canon);
 
     printf("Entry #%d %08x %s %s (%d, %ld)\n", i, entry_stamp, canon, calendar, created, utc);
@@ -261,12 +266,12 @@ static void FixMap128(struct Map *map) {
 // insertion bubble-sort
 void insertLocation(struct Map *map, int *table, int current_len) {
     int newbie_index = current_len;
-    char newbie[1024];
+    char newbie[MAXNAMELEN] = {0};
     fetchCanon(map, newbie_index, newbie);
     // fprintf(stderr, "%d %s\n", newbie_index, newbie);
 
     // FiXME : shouldn't assume max-len
-    char opponent[1024];
+    char opponent[MAXNAMELEN] = {0};
 
     table[current_len] = newbie_index; // insert at 'bottom'
     for (int finger = current_len; finger > 0 ; finger--) {
@@ -298,6 +303,7 @@ static int checkHeaderLine(char *body, long body_count, struct Map *map) {
     if (ch != '\r') return -1;
 
     int debug = opt_set(OPT_DEBUG);
+    // checkHeaderLine : 19900710, 7634, 326340, 20, 13
     if (debug) { fprintf(stderr, "checkHeaderLine : %ld, %ld, %ld, %d, %d\n", key, nEntries, nChars, span, (int) ch); }
 
     // file length should (roughly) match the amount of data
@@ -308,6 +314,7 @@ static int checkHeaderLine(char *body, long body_count, struct Map *map) {
     ;
 
     if (debug) {
+        // names : 16 4 7634 326340 479020 : 479044
         fprintf(stderr, "names : %ld %ld %ld %ld %ld : %ld\n", 
             sizeof(struct MapEntry128), sizeof(uint32_t),
             nEntries, nChars,
@@ -329,10 +336,11 @@ static int checkHeaderBlock(char *body, long body_count, struct Map *map) {
     int nEntries = be32toh((header[2] << 16) | header[3]);
 
     int debug = opt_set(OPT_DEBUG);
+    // body_count 479044
     if (debug) fprintf(stderr, "body_count %ld\n", body_count);
 
-    // header: [dee3, 2e01] 19850206
-    // header: [dc05, 0000] 1500
+    // header: [3931, 3039] 959459641
+    // header: [3730, 3031] 825241655
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[0], header[1], hstamp); }
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[2], header[3], nEntries); }
     if (hstamp != ShortKey) return -1;
@@ -378,10 +386,10 @@ static int TryRawHeader(FILE *fd, struct Map *map) {
 
     int hstamp = (header[1] << 16) | header[0];
     int nEntries = header[2];
-    if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[1], header[0], hstamp); }
-    if (debug) { fprintf(stderr, "header: [%04x] %d\n", header[2], nEntries); }
     // header: [012e, e3de] 19850206
     // header: [05dc] 1500
+    if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[1], header[0], hstamp); }
+    if (debug) { fprintf(stderr, "header: [%04x] %d\n", header[2], nEntries); }
 
     // map->hstamp = hstamp;
     // map->nEntries = nEntries;
@@ -394,6 +402,10 @@ static int TryRawHeader(FILE *fd, struct Map *map) {
 
 // [Cedar]<Cedar6.1>
 // PCRuntime>LupineRuntime.mesa!1
+//
+// [Cedar10.1]<Top>|[Cedar10.1]<Phoenix>PhS
+// witchImpl.mesa!1|[Cedar10.1]<Commands>Sl
+// ateSessions.command!1|[Cedar10.1]<Comman
 static void DumpRope(char *p, int len) {
     printf("\nrope:\n");
     for (int i = 0; i < len; i++) {
@@ -407,8 +419,12 @@ static void DumpRope(char *p, int len) {
 
 /* Read the version map from disk. */
 static struct Map *ReadMap(char *name) {
+    int debug = opt_set(OPT_DEBUG);
+    if (debug) fprintf(stderr, "\nReadMap - %s\n", name);
+
     long body_count = 0;
     char *body = snarf(name, &body_count);
+    if (!body) return NULL;
 
     struct Map *map = (struct Map *) malloc(sizeof(*map));
 
@@ -420,7 +436,7 @@ static struct Map *ReadMap(char *name) {
     int key = map->hstamp;
     int nEntries = map->nEntries;
 
-    int debug = opt_set(OPT_DEBUG);
+    // key 19900710 nEntries 7634
     if (debug) fprintf(stderr, "key %d nEntries %d\n", key, nEntries);
 
     FILE *fd = fopen(name, "r");
@@ -451,7 +467,7 @@ if (old_trash) {
     map->entries = (struct MapEntry128 *) malloc((nEntries + 1) * sizeof(struct MapEntry128));
     map->shortNames = (uint32_t *) malloc(nEntries * sizeof(uint32_t));
     map->locationIndex = (int *) malloc(nEntries * sizeof(int));
-
+    map->prefix = 0;
     // fprintf(stderr, "map : %ld %ld\n", map->nEntries, map->nChars);
 
     // table of MapEntry
@@ -481,8 +497,6 @@ if (old_trash) {
         int bb = TryRawHeader(fd, map);
         if (bb < 0) goto bad;
 
-        // long nEntries =  map->nEntries;
-
         long pos_map = ftell(fd);
 
         /* others : a[0-4] don't matter */
@@ -498,6 +512,7 @@ if (old_trash) {
             uint16_t c1 = be16toh(tiny.created[1]);
             uint16_t si0 = be16toh(tiny.index[0]);
             uint16_t si1 = be16toh(tiny.index[1]);
+
             uint32_t created = (c1 << 16) | c0;
             uint32_t index = (si1 << 16) | si0;
 
@@ -526,32 +541,35 @@ if (old_trash) {
         long pos_nchar = ftell(fd);
 
         // now get nChars!
-        uint16_t thing;
+        uint16_t thing[2];
         if (fread(&thing, sizeof(thing), 1, fd) != 1) goto bad;
 
         int debug = opt_set(OPT_DEBUG);
         if (debug) fprintf(stderr, "pos %ld %ld %ld\n", pos_map, pos_names, pos_nchar);
 
-        int rope_len = be16toh(thing);
+        int rope_len = (be16toh(thing[1]) << 16) + be16toh(thing[0]);
+        map->nChars = rope_len;
+/*
+        // ... len 42283;
         if (debug) fprintf(stderr, "rope"
             " sz %ld"
-            " %04x thing %d"
+            " %04x thing0 %d"
+            " %04x thing1 %d"
             " len %d"
             "\n",
             sizeof(thing),
-            thing, thing,
+            thing[0], thing[0],
+            thing[1], thing[1],
             rope_len
         );
-
-        map->nChars = rope_len;
-        // map->nChars = 42283;
+*/
     }
 
     long pos_rope = ftell(fd);
 
     int nChars = map->nChars;
 
-    // read stab 23363
+    // read stab @ 152701 326340
     if (debug) { fprintf(stderr, "read stab @ %ld %d\n", pos_rope, nChars); }
     if (nChars <= 0) goto bad;
 
@@ -559,15 +577,29 @@ if (old_trash) {
     long zz = fread(map->names, 1, nChars, fd);
     long pos_end = ftell(fd);
 
+    // stab pos 152701 479041 479044
     if (debug) fprintf(stderr, "stab pos %ld %ld %ld\n", pos_rope, pos_end, body_count);
 
-    // bytes read 23363
+    // bytes read 326340
     if (debug) fprintf(stderr, "bytes read %ld\n", zz);
     if (zz != nChars) {
         goto bad;
     }
 
-    if (debug) DumpRope(map->names, 200);
+    for (int k = 0; k < MAXNAMELEN; k++) {
+        char ch = map->names[k];
+        // if (debug) fprintf(stderr, "%d '%d'\n", k, ch);
+        if (ch != '\r') continue; // find end of entry
+
+        char *wdir = (char *) malloc(k+1);
+        strncpy(wdir, map->names, k);
+        wdir[k] = 0;
+        map->prefix = wdir;
+        // Release prefix: (16) '[Cedar10.1]<Top>'
+        if (debug) fprintf(stderr, "Release prefix: (%d) '%s'\n", k, map->prefix);
+        break;
+    }
+    if (debug) DumpRope(map->names, 120);
 
 // FIXME : remove this
 // follower
@@ -691,6 +723,16 @@ static int CompareInPlace(struct Map *map, char *name, int index) {
 
 static void Slashify(char *to, char *from);
 
+static void dumpIt(char *p) {
+    for (int i = 0 ; i < MAXNAMELEN; i++) {
+        char ch = p[i];
+        if (ch == 0) break;
+        if (ch == '\r') p[i] = '|';
+        fprintf(stderr, "%02x ", ch);
+    }
+    fprintf(stderr, "\n");
+}
+
 static char *vermap_Lookup(struct Map *map, char *name) {
     if (map == NULL) { pfs_errorMsg = "Can't find, no version map."; return NULL; }
 
@@ -702,9 +744,28 @@ static char *vermap_Lookup(struct Map *map, char *name) {
         DumpEntry(map, i);
     }
 
-    char buf[1024];
+    char buf[MAXNAMELEN] = {0};
     fetchCanon(map, i, buf);
-    char buf2[1024];
+
+    // FIXME : for older maps, do we need to add [Cedar]<Cedar6.1> ?
+    // and, should newer one use : [Cedar10.1]<Top>
+    // is map->names[0] the "working directory" ?
+    if (buf[0] != '[') {
+        char path[MAXNAMELEN] = {0};
+        int len = strlen(map->prefix);
+        strncpy(path, map->prefix, MAXNAMELEN);
+        path[len] = 0;
+        // fprintf(stderr, "prefix: '%s'\n", path);
+
+        int blen = strlen(buf);
+        strncpy(&path[len], buf, MAXNAMELEN);
+        path[len + blen] = 0;
+        // if (debug) dumpIt(path);
+        // fprintf(stderr, "strcat: '%s'\n", path);
+        strncpy(buf, path, MAXNAMELEN);
+    }
+
+    char buf2[MAXNAMELEN] = {0};
     Slashify(buf2, buf);
     return pfs_TranslateName(buf2);
 }
@@ -745,7 +806,7 @@ void DumpStab() {
         struct MapEntry128 *mep = &cedarMap->entries[entry_index];
         int stab_index = mep->index;
 
-        char canon[1024];
+        char canon[MAXNAMELEN] = {0};
         fetchCanon(cedarMap, entry_index, canon);
         printf("%d %d %s\n", entry_index, stab_index, canon);
     }
@@ -792,14 +853,14 @@ char *vermap_LookupStamp64(int stamp) {
 // debug
     DumpEntry(cedarMap, stamp_index);
 
-    char canon[1024];
+    char canon[MAXNAMELEN] = {0};
     fetchCanon(cedarMap, stamp_index, canon);
     char *p = malloc(strlen(canon) + 1);
     strcpy(p, canon);
     return p;
 
     /*
-    char buf2[1024];
+    char buf2[MAXNAMELEN] = {0};
     Slashify(buf2, canon);
     return pfs_TranslateName(buf2);
     */
