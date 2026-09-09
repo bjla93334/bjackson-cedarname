@@ -112,7 +112,7 @@ char *pfs_TranslateName(char *name) {
             for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) {
                 if (strncasecmp(name+1, fe->name, fe->length) == 0) {
                     // -vermapa:/Source/Rope.mesa : trying vermapa:
-                    if (debug) printf("%s : trying %s\n", name, fe->name);
+                    if (debug) printf("%s : trying %s\n", name, p+1);
                     return fe->translateProc(fe, p+1);
                 }
             }
