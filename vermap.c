@@ -726,9 +726,9 @@ static void Slashify(char *to, char *from);
 static void dumpIt(char *p) {
     for (int i = 0 ; i < MAXNAMELEN; i++) {
         char ch = p[i];
-        if (ch == 0) break;
         if (ch == '\r') p[i] = '|';
         fprintf(stderr, "%02x ", ch);
+        if (ch == 0) break;
     }
     fprintf(stderr, "\n");
 }
@@ -753,16 +753,17 @@ static char *vermap_Lookup(struct Map *map, char *name) {
     if (buf[0] != '[') {
         char path[MAXNAMELEN] = {0};
         int len = strlen(map->prefix);
-        strncpy(path, map->prefix, MAXNAMELEN);
+        strncpy(path, map->prefix, len);
         path[len] = 0;
         // fprintf(stderr, "prefix: '%s'\n", path);
 
         int blen = strlen(buf);
-        strncpy(&path[len], buf, MAXNAMELEN);
+        strncpy(&path[len], buf, blen);
         path[len + blen] = 0;
         // if (debug) dumpIt(path);
         // fprintf(stderr, "strcat: '%s'\n", path);
-        strncpy(buf, path, MAXNAMELEN);
+        int foo = strlen(path);
+        strncpy(buf, path, foo);
     }
 
     char buf2[MAXNAMELEN] = {0};
@@ -846,7 +847,7 @@ char *vermap_Translate(struct FSEntry *fe, char *name) {
 }
 
 char *vermap_LookupStamp64(int stamp) {
-    // fprintf(stderr, "vermap_Translate: %s\n", name);
+    // fprintf(stderr, "vermap_LookupStamp64: %ld\n", stamp);
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     int stamp_index = FindStamp64(cedarMap, stamp);
 
