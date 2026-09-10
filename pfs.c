@@ -98,6 +98,7 @@ char *pfs_TranslateName(char *name) {
     pfs_errorMsg = NULL;
 
     int debug = opt_set(OPT_DEBUG);
+    if (debug) printf("pfs_TranslateName : trying %s\n", name);
 
     char buf[MAXNAMELEN];
     char buf2[MAXNAMELEN];
@@ -112,7 +113,7 @@ char *pfs_TranslateName(char *name) {
             for (struct FSEntry *fe = fsTable; fe->name != NULL; ++fe) {
                 if (strncasecmp(name+1, fe->name, fe->length) == 0) {
                     // -vermapa:/Source/Rope.mesa : trying vermapa:
-                    if (debug) printf("%s : trying %s\n", name, p+1);
+                    if (debug) printf("%s : trying %s %s\n", fe->name, name, p+1);
                     return fe->translateProc(fe, p+1);
                 }
             }
@@ -120,12 +121,13 @@ char *pfs_TranslateName(char *name) {
             return strsav(name);
         }
 
+        // if (debug) printf("no dash : %s\n", name);
         if (*name != '/') { return strsav(name); }
 
         /* Need to do prefix map lookups. */
 
         strcpy(buf, name);
-        if (debug)  printf("prefix map match : %s\n", name);
+        if (debug) printf("prefix map match : %s\n", name);
 
         struct PrefixEntry *expanded = NULL;
         for (struct PrefixEntry *pe = prefixes; pe != NULL; pe = pe->next) {
@@ -239,6 +241,7 @@ static char *UXTranslate(struct FSEntry *fe, char *name) {
     char *saveName = strsav(name);
     char *bangPos = strrchr(saveName, '!');
     if (bangPos != NULL) {
+        // fprintf(stderr, "UXTranslate bang: %s %s\n", saveName, bangPos);
         if (bangPos > strrchr(saveName, '/')) *bangPos = 0;
     }
     return saveName;
