@@ -47,6 +47,21 @@ char *snarf(char *pathname, long *flen) {
 #define LongKey		19900710
 
 /*
+earlier(?) maps set hstamp to be swap of nEntries ??
+DATools include a hybrid format : text line & ShortKey
+
+ReadMap - ifs-maps/Cedar.VersionMap!1
+body_count 198074
+header: [a914, 0000] 5289
+header: [0000, a914] 346619904
+
+unclear where this bug came from - need more test cases
+munmap_chunk(): invalid pointer
+*/
+#define DAToolsKey      19850206
+
+
+/*
    These are binary data formats dictated by the Cedar runtime that generated the version map
    Currently, this is 32-bit Big Endian. Unfortunately, the file is not explicitly self-identifying.
  */
