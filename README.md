@@ -155,6 +155,17 @@ more curious minded, the internal details, so let's use them for testing :
     ./cedarname --dumpPrefixMap
     ./cedarname --dumpStab
 
+# results
+
+./cedarname /r/Rope.df
+/home/bjackson/Desktop/CSL-93-16/Cedar/release/Top/Rope.df
+
+    This one is technically wrong due to prefix map entries.
+    It was however translated thru the VersionMap 'appropriately'.
+
+./cedarname --mapFile data/CedarSource.VersionMap\!34 /r/Rope.df
+/home/bjackson/Desktop/CSL-93-16/Cedar/release/Cedar6.1/Top/Rope.df
+
 # Lookup by Stamp
 
 Now that I've read Eric's thesis, and imagined what
