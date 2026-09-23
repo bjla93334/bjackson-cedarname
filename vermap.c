@@ -12,13 +12,13 @@
 
 #define MAXNAMELEN 1024
 
-// RAM is cheap!
 // don't forget : free(buffer);
+// read entire file into memory - RAM is cheap!
 char *snarf(char *pathname, long *flen) {
     FILE *fp = fopen(pathname, "rb");
     if (fp == NULL) { perror(pathname); return NULL; }
 
-    fseek(fp, 0, SEEK_END);
+    fseek(fp, 0, SEEK_END); // instead of using 'stat'
     long file_length = ftell(fp);
 
     char *buffer = (char *)malloc(file_length);
@@ -30,7 +30,6 @@ char *snarf(char *pathname, long *flen) {
     fclose(fp);
 
     if (flen != NULL) *flen = file_length;
-
     return buffer;
 }
 
@@ -40,48 +39,42 @@ char *snarf(char *pathname, long *flen) {
 /*
     /cedar6.1/versionmap/.VersionMapImpl.mesa
     MyVersion: INT = 19850206; -- 012E.E3DE
-    We got this number from the date February 6, 1985
+    BasicTime value for : February 6, 1985
 */
 
 #define ShortKey	19850206
 #define LongKey		19900710
 
 /*
-earlier(?) maps set hstamp to be swap of nEntries ??
+early maps set hstamp to be a swappped pair (uint16_t) of nEntries
 DATools include a hybrid format : text line & ShortKey
 
 ReadMap - ifs-maps/Cedar.VersionMap!1
 body_count 198074
 header: [a914, 0000] 5289
 header: [0000, a914] 346619904
-
-unclear where this bug came from - need more test cases
-munmap_chunk(): invalid pointer
 */
 #define DAToolsKey      19850206
 
+// unclear where this bug came from - need more test cases
+// munmap_chunk(): invalid pointer
 
 /*
-   These are binary data formats dictated by the Cedar runtime that generated the version map
-   Currently, this is 32-bit Big Endian. Unfortunately, the file is not explicitly self-identifying.
+   Binary data formats from Cedar runtime which generated the version map
+   Dorado / SPARC32 - 32-bit Big Endian
+   Unfortunately, not explicitly self-identifying, just stamp validated
  */
+struct __attribute__((packed)) Stamp48 {
+    uint16_t lo;
+    uint16_t num;
+    uint16_t hi;
+};
+
 struct __attribute__((packed)) Stamp64 {
     uint16_t lo;
     uint16_t num;
     uint16_t hi;
     uint16_t extra;
-};
-
-struct __attribute__((packed)) MapEntry128 {
-    struct Stamp64 stamp;
-    uint32_t created;		/* cedar time value */
-    uint32_t index;		/* index of first char of long name */
-};
-
-struct __attribute__((packed)) Stamp48 {
-    uint16_t lo;
-    uint16_t num;
-    uint16_t hi;
 };
 
 struct __attribute__((packed)) MapEntry112 {
@@ -90,33 +83,39 @@ struct __attribute__((packed)) MapEntry112 {
     uint16_t index[2];		/* index of first char of long name */
 };
 
-struct Map {
-    long hstamp;                /* header stamp */
-    long nEntries;		/* number of elements in each of next two  */
-    long nChars;		/* number of chars in names */
-    uint32_t *shortNames;	/* index of an entry, in shortname order */
-    struct MapEntry128 *entries; /* the map entries */
-    char *names;		/* all the names */
-    int *locationIndex;         /* 'btree' of location names (not from map) */
-    char *prefix;               /* first stab entry */
+struct __attribute__((packed)) MapEntry128 {
+    struct Stamp64 stamp;
+    uint32_t created;		/* cedar time value */
+    uint32_t index;		/* index of first char of long name */
 };
 
-// be less clever about last entry
+struct Map {
+    long nChars;		/* number of chars in names */
+    char *names;		/* RopeSeq, CR (\r) separated, of IFS 'locations' */
+    char *prefix;               /* first entry (i.e. dir root of release) */
+
+    long hstamp;                /* header stamp */
+    long nEntries;		/* number of elements in maps */
+    struct MapEntry128 *entries; /* file meta-data */
+    uint32_t *shortNames;	/* 'basename' => map entry (index), alphabetical */
+    int *locationIndex;         /* 'location' => map entry (index), alphabetical */
+};
+
+// consider these 'inline'
 static int nameStart(struct Map *map, int i) {
     struct MapEntry128 *mep = &map->entries[i];
     return mep->index;
 }
 
+// be less clever about last entry
 static int nameLast(struct Map *map, int i) {
     if (i == (map->nEntries - 1)) return map->nChars - 1;
-    struct MapEntry128 *mep = &map->entries[i + 1]; // follower
+    struct MapEntry128 *mep = &map->entries[i + 1]; // from follower
     return mep->index - 1;
 }
 
 static void DumpEntry(struct Map *map, int i); // ugh, recursive!
 
-// FIXME : max len?
-// assert w/checking, or scan the stab and detect max length
 static void fetchCanon(struct Map *map, int i, char *buf) {
     int start = nameStart(map, i);
     int end = nameLast(map, i);
@@ -127,34 +126,31 @@ static void fetchCanon(struct Map *map, int i, char *buf) {
 
     int rope_len = map->nChars;
 
-    if (start >= rope_len) {
+    if (start >= rope_len || start < 0) {
         fprintf(stderr, "out-of-bounds : %s, %d\n", "start", start);
         goto bad;
     }
 
-    if (end > rope_len) {
+    if (end > rope_len || end < 0) {
         fprintf(stderr, "out-of-bounds : %s, %d\n", "end", end);
         goto bad;
     }
 
-    // FIXME : max path length
-    if ((nbytes > 100) && (nbytes > 0)) {
+    if ((nbytes > MAXNAMELEN) || (nbytes < 0)) {
         fprintf(stderr, "out-of-bounds : %s, %d\n", "nbytes", nbytes);
         goto bad;
     }
 
-    // assert(nbytes < MAXNAMELEN);
     strncpy(buf, map->names + start, nbytes);
-    buf[nbytes] = 0;
-
+    buf[nbytes] = 0; // trust caller
     return;
 bad:
-    strncpy(buf, "bogus", 6);
+    strncpy(buf, "bogus", 6); // rather than just dying!
     // DumpEntry(map, i);
 }
 
+// tzset ?
 static void format_pt(time_t epoch_time, char *buffer, size_t buflen) {
-    // tzset
     struct tm utc_time;
     localtime_r(&epoch_time, &utc_time);
     strftime(buffer, buflen, "%Y-%m-%d %H:%M:%S %Z", &utc_time);
@@ -194,8 +190,6 @@ static void NameParts(char *canon, int *dirpos, int *extpos, int *bangpos);
    0 UTC: Thursday, January 1, 1970 at 12:00:00 AM
 */
 static void DumpEntry(struct Map *map, int i) {
-    uint32_t stab = map->shortNames[i]; // arg to CompareInPlace()
-
     struct MapEntry128 *mep = &map->entries[i];
     uint32_t index = mep->index; // index into string table
 
@@ -204,12 +198,12 @@ static void DumpEntry(struct Map *map, int i) {
     uint16_t num = stamp.num;
     uint16_t hi = stamp.hi;
     uint16_t extra = stamp.extra;
-
     int entry_stamp = ((int) stamp.num << 16) + stamp.hi;
 
-    uint32_t created = mep->created;
+    uint32_t created = mep->created; // BasicTime
     int fudge = (-24*60*60) + (-2*365*24*60*60); // leap year ??
-    uint64_t utc = fudge + (uint64_t) created;
+    uint64_t utc = (fudge + (uint64_t) created) * 1000; // msec, as a hint
+
     char buffer[80];
     // format_utc(utc, buffer, sizeof(buffer));
     format_pt(utc, buffer, sizeof(buffer));
@@ -224,51 +218,30 @@ static void DumpEntry(struct Map *map, int i) {
     int bangpos = -1;
     NameParts(canon, &dirpos, &extpos, &bangpos);
 
-    // printf("Entry #%d %08x %s %s (%d, %ld)\n", i, entry_stamp, canon, calendar, created, utc);
-    printf("%d,%08x,%ld,%d,%d,%d,%d,%d,%s,%s\n",
-        i, entry_stamp, utc * 1000, created, clen, dirpos, extpos, bangpos, canon, calendar); // utc msec
+    // sneak these in
+    uint32_t basename_index = map->shortNames[i];
+    uint32_t loc_index = map->locationIndex[i];
 
-    int debug = opt_set(OPT_DEBUG);
-    // FIXME : perhaps use JSON and have this be a feature ?
-    if (debug) fprintf(stderr,
-        " i: %d"
-        "\ncanon: %s"
-        "\n%08x stab: %d"
-        "\n%08x created: %d"
-        "\n%08lx utc: %ld (%s)"
-        "\n%08x index: %d"
-"\nstamp:"
-        " %04x%04x"
-        " %04x num: %d"
-        " %04x hi: %d"
-        " %04x lo: %d"
-        " %04x extra: %d"
-        "\n",
-        i,
-        canon,
-        stab, stab,
-        created, created,
-        utc, utc, calendar,
-        index, index,
-        num, hi,
-        num, num,
-        hi, hi,
-        lo, lo,
-        extra, extra
+    printf("%d,%d,%d,%08x,%ld,%d,%d,%d,%d,%d,%s,%s\n",
+        i, basename_index, loc_index,
+        entry_stamp, utc, created,
+        clen, dirpos, extpos, bangpos, canon,
+        calendar
     );
+
+    // FIXME : perhaps use JSON as a feature ?
 }
 
 // Version Maps use Alto IFS syntax : [Server]<Directory>SubDir>Base.ext!N
-
 #define IsDelim(c)	((c) == '[' || (c) == ']' || (c) == '<' || (c) == '>' || (c) == '/')
 
 /*
-  There's obvious approaches to use here.
-  We could "wrap getters" for machine dependent files, or
-  rather than bulk reading, we could convert the stream (ala rpc) while pulling in the data,
-  or (quick and dirty), read in bulk and swap everything in place before it's used
+  There's three obvious approaches to use here.
+  "wrap getters" for machine dependent files, or
+  bulk read and convert, or
+  convert the stream (ala rpc)
 
-  This could also be smarter abouth whether swapping is needed or not.
+  could be smarter about whether swapping is needed
  */
 #include <endian.h>
 static void FixMap128(struct Map *map) {
@@ -283,7 +256,7 @@ static void FixMap128(struct Map *map) {
         uint16_t hi = be16toh(stamp.hi);
         uint16_t extra = be16toh(stamp.extra);
         uint32_t created = be32toh(mep->created);
-        uint32_t index = be32toh(mep->index); // index into string table
+        uint32_t index = be32toh(mep->index);
 
         // copy back host-order values;
         map->shortNames[i] = name_index;
@@ -297,13 +270,13 @@ static void FixMap128(struct Map *map) {
 }
 
 // insertion bubble-sort
+// works, but might be "upside down" ??
 void insertLocation(struct Map *map, int *table, int current_len) {
     int newbie_index = current_len;
     char newbie[MAXNAMELEN] = {0};
     fetchCanon(map, newbie_index, newbie);
     // fprintf(stderr, "%d %s\n", newbie_index, newbie);
 
-    // FiXME : shouldn't assume max-len
     char opponent[MAXNAMELEN] = {0};
 
     table[current_len] = newbie_index; // insert at 'bottom'
@@ -316,7 +289,7 @@ void insertLocation(struct Map *map, int *table, int current_len) {
         // if (newbie > opponent) break;
         if (placing > 0) break;
 
-        // swap these
+        // swap them
         table[finger] = opponent_index;
         table[finger-1] = newbie_index;
     }
@@ -330,7 +303,7 @@ static int checkHeaderLine(char *body, long body_count, struct Map *map) {
     // 19900710, 7634, 326340, 20 13
     int count = sscanf(body, "%ld %ld %ld%n", &key, &nEntries, &nChars, &span);
     if (count != 3) return -1;
-    if (key != LongKey) return -1;
+    if (key != LongKey) return -1; // DATools might use ShortKey, or some other value ?
 
     char ch = body[span];
     if (ch != '\r') return -1;
@@ -339,7 +312,7 @@ static int checkHeaderLine(char *body, long body_count, struct Map *map) {
     // checkHeaderLine : 19900710, 7634, 326340, 20, 13
     if (debug) { fprintf(stderr, "checkHeaderLine : %ld, %ld, %ld, %d, %d\n", key, nEntries, nChars, span, (int) ch); }
 
-    // file length should (roughly) match the amount of data
+    // file length should (roughly) match the amount of data (modulo Tioga 3 NUL's hack)
     long total = 
         (nEntries * sizeof(struct MapEntry128))
         + (nEntries * sizeof(uint32_t))
@@ -376,32 +349,34 @@ static int checkHeaderBlock(char *body, long body_count, struct Map *map) {
     // header: [3730, 3031] 825241655
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[0], header[1], hstamp); }
     if (debug) { fprintf(stderr, "header: [%04x, %04x] %d\n", header[2], header[3], nEntries); }
-    if (hstamp != ShortKey) return -1;
 
-// FIXME : remove this junk
-    int dead = 0;
-    if (dead)  {
-        // od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
-        // 0056700 8900 3402 6402 2ba5 0000 435b 6465 7261
-        // 2ba5 0000 - 42283
-
-        int offset = 0056700; // from od, approx
-        int nChars = 42283;
-        // map->hstamp = hstamp;
-        // map->nChars = nChars;
-        fprintf(stderr, "0x%08x %d nChars %d @ %d\n", hstamp, hstamp, nChars, offset);
-
-        // 0x012ee3de 19850206 nChars 42283 24000
-        // bulk 24013, grain 16 bits 128
-        int bulk = body_count - nChars;
-        int grain = bulk / nEntries;
-        fprintf(stderr, "bulk %d, grain %d bits %d\n", bulk, grain, grain * 8);
-    }
+    if (hstamp != ShortKey) return -1; // ugh!
 
     map->hstamp = hstamp;
     map->nEntries = nEntries;
-    map->nChars = -1;
+    map->nChars = -1; // fixed later
     return 0; // well-formed
+}
+
+// od -t x2 data/CedarSource.VersionMap\!34 | grep 2ba5
+// 0056700 8900 3402 6402 2ba5 0000 435b 6465 7261
+// 2ba5 0000 - 42283
+
+// FIXME : remove this junk
+// find length of RopeSeq
+static void junk(int hstamp, int nEntries, long body_count) {
+    int offset = 0056700; // approx
+    int nChars = 42283;
+    fprintf(stderr, "0x%08x %d nChars %d @ %d\n", hstamp, hstamp, nChars, offset);
+
+    // 0x012ee3de 19850206 nChars 42283 24000
+    // bulk 24013, grain 16 bits 128
+    int bulk = body_count - nChars;
+    int grain = bulk / nEntries;
+    fprintf(stderr, "bulk %d, grain %d bits %d\n", bulk, grain, grain * 8);
+
+    // map->hstamp = hstamp;
+    // map->nChars = nChars;
 }
 
 // all this to just skip 8 bytes!
@@ -417,7 +392,7 @@ static int TryRawHeader(FILE *fd, struct Map *map) {
 
     for (int i = 0; i < 3; i++) { header[i] = be16toh(header[i]); }
 
-    int hstamp = (header[1] << 16) | header[0];
+    int hstamp = (header[1] << 16) | header[0]; // is this a proper be32?
     int nEntries = header[2];
     // header: [012e, e3de] 19850206
     // header: [05dc] 1500
@@ -436,9 +411,9 @@ static int TryRawHeader(FILE *fd, struct Map *map) {
 // [Cedar]<Cedar6.1>
 // PCRuntime>LupineRuntime.mesa!1
 //
-// [Cedar10.1]<Top>|[Cedar10.1]<Phoenix>PhS
-// witchImpl.mesa!1|[Cedar10.1]<Commands>Sl
-// ateSessions.command!1|[Cedar10.1]<Comman
+// [Cedar10.1]<Top>
+// [Cedar10.1]<Phoenix>PhSwitchImpl.mesa!1
+// [Cedar10.1]<Commands>SlateSessions.command!1
 static void DumpRope(char *p, int len) {
     printf("\nrope:\n");
     for (int i = 0; i < len; i++) {
@@ -741,7 +716,7 @@ static void NameParts(char *canon, int *dirpos, int *extpos, int *bangpos) {
     }
 }
 
-// FIXME:
+// FIXME: use NameParts?
 static int CompareInPlace(struct Map *map, char *name, int index) {
     struct MapEntry128 *mep = &map->entries[index];
     int start = mep->index;
@@ -878,12 +853,13 @@ void DumpStab(int alpha) {
     }
 }
 
+// basenames
 void DumpIndex() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     printf("#,%s,%s\n", cedarMap->prefix, localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
         uint32_t name_index = cedarMap->shortNames[i];
-        printf("%d\n", name_index);
+        printf("%d\n", name_index); // add i, basename string?
     }
 }
 
@@ -895,6 +871,9 @@ void DumpAll() {
     }
 }
 
+// add DumpLocationMap ?
+// could add DumpByLocation - i.e. alphabetized
+// by basenames
 void DumpSorted() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     printf("#,%s,%s\n", cedarMap->prefix, localFSName);
