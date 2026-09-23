@@ -108,7 +108,7 @@ static int nameStart(struct Map *map, int i) {
 }
 
 static int nameLast(struct Map *map, int i) {
-    if (i == (map->nEntries - 1)) return map->nChars;
+    if (i == (map->nEntries - 1)) return map->nChars - 1;
     struct MapEntry128 *mep = &map->entries[i + 1]; // follower
     return mep->index - 1;
 }
@@ -706,6 +706,23 @@ static int ShortNameFind(struct Map *map, char *name) {
     return -1;
 }
 
+static void NameParts(char *canon, int *dirpos, int *extpos, int *bangpos) {
+    int dir = -1;
+    int bang = -1;
+    int ext = -1;
+    for (int i = 0 ; i < MAXNAMELEN; i++) {
+        char c = canon[i];
+	if (c == '!') bang = i; // should only be one
+	if (IsDelim(c)) { dir = i; ext = -1; } // last
+	if (c == '.' && ext < 0) ext = i; // first after dir
+	if (c == 0) {
+            if (dirpos != NULL) *dirpos = dir;
+            if (extpos != NULL) *extpos = ext;
+            if (bangpos != NULL) *bangpos = bang;
+        }
+    }
+}
+
 // FIXME:
 static int CompareInPlace(struct Map *map, char *name, int index) {
     struct MapEntry128 *mep = &map->entries[index];
@@ -815,16 +832,31 @@ void setMapName(char *name) {
     localFSName = name;
 }
 
-void DumpStab() {
+// @see CompareInPlace
+//  0 [Cedar10.1]<Top>^M
+// 17 [Cedar10.1]<Phoenix>PhSwitchImpl.mesa!1^M
+// 57 [Cedar10.1]<Commands>SlateSessions.command!1^M
+// 7633 [Cedar10.1]<MMM>MMMKeyboard.mesa!2
+void DumpStab(int alpha) {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
+    printf("#,%s,%s\n", cedarMap->prefix, localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
-        int entry_index = cedarMap->locationIndex[i];
+        int entry_index = (alpha) ? cedarMap->locationIndex[i] : i; // alphabetical order
         struct MapEntry128 *mep = &cedarMap->entries[entry_index];
         int stab_index = mep->index;
 
         char canon[MAXNAMELEN] = {0};
         fetchCanon(cedarMap, entry_index, canon);
-        printf("%d %d %s\n", entry_index, stab_index, canon);
+        int clen = strlen(canon);
+        int dirpos = -1;
+        int extpos = -1;
+        int bangpos = -1;
+        NameParts(canon, &dirpos, &extpos, &bangpos);
+
+        // 0,17,39,19,32,37,[Cedar10.1]<Phoenix>PhSwitchImpl.mesa!1
+        // 1,57,44,20,34,42,[Cedar10.1]<Commands>SlateSessions.command!1
+        // 7633,326305,34,15,27,32,[Cedar10.1]<MMM>MMMKeyboard.mesa!2
+        printf("%d,%d,%d,%d,%d,%d,%s\n", entry_index, stab_index, clen, dirpos, extpos, bangpos, canon);
     }
 }
 

@@ -166,6 +166,20 @@ more curious minded, the internal details, so let's use them for testing :
 ./cedarname --mapFile data/CedarSource.VersionMap\!34 /r/Rope.df
 /home/bjackson/Desktop/CSL-93-16/Cedar/release/Cedar6.1/Top/Rope.df
 
+./cedarname --mapFile data/CedarSource.VersionMap\!34 /r/Rope.df
+
+./cedarname --dumpStab | tail -2 | cat -vet
+./cedarname --dumpStabAlpha | head
+./cedarname --dumpStab > /tmp/stab.csv
+
+# more maps : source, intermediate, sparc
+
+${XeroxCedar}/release/CedarVersionMap/CedarSource.VersionMap
+${XeroxCedar}/release/CedarVersionMap/CedarSparcExecutable.VersionMap
+
+./cedarname --dumpAll > /tmp/source.out
+./cedarname --dumpAll --mapFile ${XeroxCedar}/release/CedarVersionMap/CedarIntermediate.VersionMap
+
 # Lookup by Stamp
 
 Now that I've read Eric's thesis, and imagined what

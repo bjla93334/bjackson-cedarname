@@ -8,6 +8,7 @@ enum flag_t { OPT_DEBUG, OPT_TRACE,
     OPT_DUMP_PREFIXMAP,
     OPT_DUMP_SORTED,
     OPT_DUMP_STAB,
+    OPT_DUMP_STAB_ALPHA,
     OPT_MAP_FILE
 };
 
@@ -24,6 +25,7 @@ char *options[] = {
     "--dumpPrefixMap",
     "--dumpSorted",
     "--dumpStab",
+    "--dumpStabAlpha",
     "--mapFile",
     NULL
 };
@@ -41,4 +43,4 @@ extern void DumpAll();
 extern void DumpIndex();
 extern void DumpPrefixMap();
 extern void DumpSorted();
-extern void DumpStab();
+extern void DumpStab(int alpha);

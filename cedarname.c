@@ -60,7 +60,8 @@ int main(int argc, char *argv[]) {
     if (opt_set(OPT_DUMP_INDEX)) { DumpIndex(); }
     if (opt_set(OPT_DUMP_SORTED)) { DumpSorted(); }
     if (opt_set(OPT_DUMP_PREFIXMAP)) { DumpPrefixMap(); }
-    if (opt_set(OPT_DUMP_STAB)) { DumpStab(); }
+    if (opt_set(OPT_DUMP_STAB)) { DumpStab(0); }
+    if (opt_set(OPT_DUMP_STAB_ALPHA)) { DumpStab(1); }
 
     int something = 0;
     if (something) {
