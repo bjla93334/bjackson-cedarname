@@ -153,6 +153,13 @@ bad:
     // DumpEntry(map, i);
 }
 
+static void format_pt(time_t epoch_time, char *buffer, size_t buflen) {
+    // tzset
+    struct tm utc_time;
+    localtime_r(&epoch_time, &utc_time);
+    strftime(buffer, buflen, "%Y-%m-%d %H:%M:%S %Z", &utc_time);
+}
+
 // time_t epoch_time = 1784419200; (e.g., Tuesday, August 18, 2026)
 static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
     struct tm utc_time;
@@ -173,6 +180,8 @@ static void format_utc(time_t epoch_time, char *buffer, size_t buflen) {
         );
     }
 }
+
+static void NameParts(char *canon, int *dirpos, int *extpos, int *bangpos);
 
 /*
    'created' is a BasicTime - seconds since 1901 / 1968 ; so wrong unix epoch
@@ -202,13 +211,22 @@ static void DumpEntry(struct Map *map, int i) {
     int fudge = (-24*60*60) + (-2*365*24*60*60); // leap year ??
     uint64_t utc = fudge + (uint64_t) created;
     char buffer[80];
-    format_utc(utc, buffer, sizeof(buffer));
+    // format_utc(utc, buffer, sizeof(buffer));
+    format_pt(utc, buffer, sizeof(buffer));
     char *calendar = buffer;
 
     char canon[MAXNAMELEN] = {0};
     fetchCanon(map, i, canon);
 
-    printf("Entry #%d %08x %s %s (%d, %ld)\n", i, entry_stamp, canon, calendar, created, utc);
+    int clen = strlen(canon);
+    int dirpos = -1;
+    int extpos = -1;
+    int bangpos = -1;
+    NameParts(canon, &dirpos, &extpos, &bangpos);
+
+    // printf("Entry #%d %08x %s %s (%d, %ld)\n", i, entry_stamp, canon, calendar, created, utc);
+    printf("%d,%08x,%ld,%d,%d,%d,%d,%d,%s,%s\n",
+        i, entry_stamp, utc * 1000, created, clen, dirpos, extpos, bangpos, canon, calendar); // utc msec
 
     int debug = opt_set(OPT_DEBUG);
     // FIXME : perhaps use JSON and have this be a feature ?
@@ -862,6 +880,7 @@ void DumpStab(int alpha) {
 
 void DumpIndex() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
+    printf("#,%s,%s\n", cedarMap->prefix, localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
         uint32_t name_index = cedarMap->shortNames[i];
         printf("%d\n", name_index);
@@ -870,6 +889,7 @@ void DumpIndex() {
 
 void DumpAll() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
+    printf("#,%s,%s\n", cedarMap->prefix, localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
         DumpEntry(cedarMap, i);
     }
@@ -877,6 +897,7 @@ void DumpAll() {
 
 void DumpSorted() {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
+    printf("#,%s,%s\n", cedarMap->prefix, localFSName);
     for (int i = 0; i < cedarMap->nEntries; i++) {
         uint32_t stab = cedarMap->shortNames[i]; // arg to CompareInPlace()
         DumpEntry(cedarMap, stab);
@@ -898,8 +919,8 @@ char *vermap_LookupStamp64(int stamp) {
     if (cedarMap == NULL) cedarMap = ReadMap(localFSName);
     int stamp_index = FindStamp64(cedarMap, stamp);
 
-// debug
-    DumpEntry(cedarMap, stamp_index);
+    int debug = opt_set(OPT_DEBUG);
+    if (debug) DumpEntry(cedarMap, stamp_index);
 
     char canon[MAXNAMELEN] = {0};
     fetchCanon(cedarMap, stamp_index, canon);
