@@ -89,6 +89,11 @@ struct __attribute__((packed)) MapEntry128 {
     uint32_t index;		/* index of first char of long name */
 };
 
+struct Assist {
+    int shortInvert;
+    int locInvert;
+};
+
 struct Map {
     long nChars;		/* number of chars in names */
     char *names;		/* RopeSeq, CR (\r) separated, of IFS 'locations' */
@@ -99,6 +104,7 @@ struct Map {
     struct MapEntry128 *entries; /* file meta-data */
     uint32_t *shortNames;	/* 'basename' => map entry (index), alphabetical */
     int *locationIndex;         /* 'location' => map entry (index), alphabetical */
+    struct Assist *assist;      /* 'entry' = basename-pos, loc-pos alphabetical (for DumpEntry) */
 };
 
 // consider these 'inline'
@@ -205,8 +211,8 @@ static void DumpEntry(struct Map *map, int i) {
     uint64_t utc = (fudge + (uint64_t) created) * 1000; // msec, as a hint
 
     char buffer[80];
-    // format_utc(utc, buffer, sizeof(buffer));
-    format_pt(utc, buffer, sizeof(buffer));
+    // format_utc(utc/1000, buffer, sizeof(buffer));
+    format_pt(utc/1000, buffer, sizeof(buffer));
     char *calendar = buffer;
 
     char canon[MAXNAMELEN] = {0};
@@ -219,11 +225,11 @@ static void DumpEntry(struct Map *map, int i) {
     NameParts(canon, &dirpos, &extpos, &bangpos);
 
     // sneak these in
-    uint32_t basename_index = map->shortNames[i];
-    uint32_t loc_index = map->locationIndex[i];
+    uint32_t basename_pos = map->assist[i].shortInvert;
+    uint32_t loc_pos = map->assist[i].locInvert;
 
     printf("%d,%d,%d,%08x,%ld,%d,%d,%d,%d,%d,%s,%s\n",
-        i, basename_index, loc_index,
+        i, basename_pos, loc_pos,
         entry_stamp, utc, created,
         clen, dirpos, extpos, bangpos, canon,
         calendar
@@ -475,6 +481,7 @@ if (old_trash) {
     map->entries = (struct MapEntry128 *) malloc((nEntries + 1) * sizeof(struct MapEntry128));
     map->shortNames = (uint32_t *) malloc(nEntries * sizeof(uint32_t));
     map->locationIndex = (int *) malloc(nEntries * sizeof(int));
+    map->assist = (struct Assist *) malloc(nEntries * sizeof(struct Assist));
     map->prefix = 0;
     // fprintf(stderr, "map : %ld %ld\n", map->nEntries, map->nChars);
 
@@ -621,6 +628,14 @@ if (old_trash) {
     // build locationIndex, ordered appropriately
     for (int i = 0; i < nEntries; i++) {
         insertLocation(map, map->locationIndex, i);
+    }
+
+    // build map->assist
+    for (int i = 0; i < nEntries; i++) {
+        int shortPos = map->shortNames[i]; // i.e. where basename is ordered
+        int locPos = map->locationIndex[i];
+        map->assist[shortPos].shortInvert = i;
+        map->assist[locPos].locInvert = i;
     }
     return map;
 bad:
