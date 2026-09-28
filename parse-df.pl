@@ -317,7 +317,7 @@ my $parts = parse_vname($vname);
     $tree{sections} = \@sections;
     my $o = \%tree;
     $r->{tree} = $o; # do this at the end
-    return $o;
+    return $r;
 }
 
 foreach my $opt (@ARGV) {
