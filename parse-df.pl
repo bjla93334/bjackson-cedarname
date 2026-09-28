@@ -11,6 +11,7 @@ use lib $ENV{HOME}.'/bin/perlib';
 use io::text qw(inhale_file);
 
 my $endl = "\n";
+my $cr = "\r";
 my $dquot = '"';
 my $squot = "'";
 my $blank = ' ';
@@ -128,6 +129,12 @@ sub parse_df {
     # /Cedar10.1/Top/Interpress.df lines:
     print STDERR (join(' ', $pathname, 'lines:', $#lines), $endl) if $debug or $trace;
 
+    ## UGH - inhale doesn't do the right thing for \r text files
+    if (($#lines == 0) and ($lines[0] =~ m/\r/)) {
+        @lines = split($cr, $lines[0]);
+        print STDERR (join(' ', 'FIXUP:', $pathname, 'lines:', $#lines), $endl) if $debug or $trace;
+    }
+
     my %tree;
     ## $r->{tree} = \%tree; # do this at the end
     $r->{body} = \@lines;
@@ -136,6 +143,8 @@ sub parse_df {
     my $section;
     my $lineno = 0; # primarily for trace/debug
 
+my $carry_over = '';
+
     # tree has a list of 'sections':
     my @sections;
     foreach my $text (@lines) {
@@ -143,6 +152,19 @@ sub parse_df {
         $lineno++;
         next if $text =~ m|^\s*$|; # blank lines
         next if $text =~ m|^\s*--|; # comment lines
+
+## FIXME : ugh, multi-line 'Using' clause
+if (($text =~ m|^  Using \[|) and (substr($text, -1) ne '\]')) {
+    $carry_over = $text;
+    next;
+}
+
+if ($carry_over ne '') {
+    $carry_over .= $text;
+    next unless $carry_over =~ m|^  Using \[(.*)\]$|;
+    $text = $carry_over;
+    $carry_over = '';
+}
 
         ## Directory [Cedar10.1]<AIS>
         if ($text =~ m|^Directory \[(.*)\]<(.*)>$|) {
