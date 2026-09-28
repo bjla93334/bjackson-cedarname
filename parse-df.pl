@@ -86,9 +86,15 @@ sub resolve_df {
         my $canon = "[".$ifs_server."]<".join(">", @rest);
         print STDERR (join($blank, 'canon:', $canon), $endl) if $debug;
 
+        # get by with a little help from git
+        my $goid = `git hash-object $pathname`;
+        chomp($goid);
+        print STDERR (join($blank, 'goid:', $goid, $pathname), $endl) if $debug;
+
         my %df;
         $df{pathname} = $pathname;
         $df{canon} = $canon;
+        $df{goid} = $goid;
 # FIXME
         $smodel{$pathname} = \%df; # ensure defined
         # $df{location} = $location;
@@ -320,12 +326,27 @@ my $parts = parse_vname($vname);
     return $r;
 }
 
+my $densejson = 0;
+sub genout {
+    my ($adf) = @_;
+    my $project = $adf->{goid};
+    my $doclet = encode_json($adf);
+    my $cmd = 'python3 -mjson.tool';
+    $cmd = 'cat' if $densejson;
+    my $openspec = '|'.$cmd.'>'.$project.'.adf';
+    print STDERR (join($blank, 'generating:', $openspec), $endl); # if $debug;
+    open(FD, $openspec) or die $cmd.': '.$!;
+    print FD $doclet;
+    close(FD);
+}
+
 foreach my $opt (@ARGV) {
     # --debug
     # --host:Cedar10.1=${XeroxCedar}/release
     if ($opt eq '--debug') { $debug = 1; next };
     if ($opt eq '--trace') { $trace = 1; next };
     if ($opt eq '--unknown') { $unknown = 1; next };
+    if ($opt eq '--densejson') { $densejson = 1; next };
     if ($opt =~ /--host:(.*)=(.*)/) {
         my ($a, $b) = ($1, $2);
         $host{$a} = $b;
@@ -334,8 +355,7 @@ foreach my $opt (@ARGV) {
     }
 
     my $adf = parse_df($opt);
-    my $doclet = encode_json($adf);
-    print STDERR (join($blank, 'adf:', $doclet), $endl); #  if $debug;
+    genout($adf);
 }
 
 exit 0;
