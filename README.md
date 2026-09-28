@@ -432,6 +432,18 @@ IO.UnsafePutBlock[st, [LOOPHOLE[@dMapEntry], 0, BYTES[DMapEntry]] ];
     enhancements may be required. It's also intended as an easy to understand illustration for folks
     who have no prior experience with Cedar.
 
+## testing parse-df.pl
+
+    If you understand this, you're welcome ;)
+    If you don't, don't stress about it - work in progress
+    In order for mjson to pretty print the doclet, you gotta 'fix' the JSON text
+
+    ./parse-df.pl --host:Cedar10.1=${XeroxCedar}/release /Cedar10.1/Top/Interpress.df >& /tmp/doclet.json
+    vim /tmp/doclet.json
+    python3 -mjson.tool /tmp/doclet.json
+
+    try --debug, and/or --trace
+
 # Understanding PFS Prefix Mapping
 
     ${HOME}/.cedar.pma
