@@ -288,14 +288,11 @@ sub parse_df {
             $o{epoch} = $epoch;
             $o{basic_time} = $basic_time;
 
-## FIXME : is this really the way to put things in the tree?
-## this could be totally broken
-## - I always get confused about list reference and list content!
+## FIXME : is this the best way to organize the tree?
             ## ensure a list exists :
-            my @elist = ();
-            $r->{elist} //= \@elist;
-            my $elist = $r->{elist};
-            push @elist, \%o;
+            $section->{elist} //= [];
+            push @{ $section->{elist} }, \%o;
+
 
 ## FIXME : parse name here, or later ??
 my $parts = parse_vname($vname);
