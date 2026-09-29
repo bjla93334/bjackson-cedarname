@@ -16,6 +16,7 @@ my $dquot = '"';
 my $squot = "'";
 my $blank = ' ';
 my $slash = '/';
+my $endbrace = ']';
 
 # Unix / Epoch values :
 # 0 : Thursday, January 1, 1970 at 12:00:00 AM
@@ -63,8 +64,8 @@ my $vname_sepr = '.!>+';
 # +sub>base.ext!version
 sub parse_vname {
     my ($vname) = @_;
-    my $xxx = $vname; $xxx =~ s|^\+||;
-    my @comps = split(/[\[\]<>\/!]+/, $xxx);
+    my $t1 = $vname; $t1 =~ s|^\+||;
+    my @comps = split(/[\[\]<>\/!]+/, $t1);
     @comps = grep { $_ ne '' } @comps; # remove empty (back-to-back delim)
     my $parts = join('/', @comps); # ref
     ## print STDERR (join($blank, $parts, @comps, 'vname', $vname), $endl) if $debug;
@@ -101,7 +102,8 @@ sub resolve_df {
         # $df{location} = $location;
         # $df{created} = $created;
         # $df{version} = $version;
-        # $canon = ...; # [host]<path>xx.df!xx@mtime - path may include '>'
+        # $canon = ...;
+# [host]<path>module.df!vnum@mtime - path may include '>'
 
         return $smodel{$pathname}; # let's call this a df-ref
     }
@@ -127,12 +129,12 @@ sub parse_df {
     my $pathname = $r->{pathname};
     my @lines = inhale_file($pathname);
     # /Cedar10.1/Top/Interpress.df lines:
-    print STDERR (join(' ', $pathname, 'lines:', $#lines), $endl) if $debug or $trace;
+    print STDERR (join(' ', $pathname, 'lines:', $#lines+1), $endl) if $debug or $trace;
 
     ## UGH - inhale doesn't do the right thing for \r text files
     if (($#lines == 0) and ($lines[0] =~ m/\r/)) {
         @lines = split($cr, $lines[0]);
-        print STDERR (join(' ', 'FIXUP:', $pathname, 'lines:', $#lines), $endl) if $debug or $trace;
+        print STDERR (join(' ', 'FIXUP:', $pathname, 'lines:', $#lines+1), $endl) if $debug or $trace;
     }
 
     my %tree;
@@ -140,31 +142,37 @@ sub parse_df {
     $r->{body} = \@lines;
 
     # active context:
-    my $section;
+    my $pending_section;
     my $lineno = 0; # primarily for trace/debug
 
 my $carry_over = '';
 
     # tree has a list of 'sections':
-    my @sections;
-    foreach my $text (@lines) {
-        chomp($text);
+    my @sections = [];
+    foreach my $orig (@lines) {
+        chomp($orig);
+        my $text = $orig; # copy?
         $lineno++;
         next if $text =~ m|^\s*$|; # blank lines
         next if $text =~ m|^\s*--|; # comment lines
 
-## FIXME : ugh, multi-line 'Using' clause
-if (($text =~ m|^  Using \[|) and (substr($text, -1) ne '\]')) {
-    $carry_over = $text;
-    next;
-}
+## FIX : ugh, multi-line 'Using' clause
+# --
+        if (($text =~ m|^  Using \[|) and (substr($text, -1) ne $endbrace)) {
+            $carry_over = $text;
+            print STDERR ($endl, join($blank, $lineno, $carry_over), $endl) if $trace; # extra line break
+            next;
+        }
 
-if ($carry_over ne '') {
-    $carry_over .= $text;
-    next unless $carry_over =~ m|^  Using \[(.*)\]$|;
-    $text = $carry_over;
-    $carry_over = '';
-}
+        if ($carry_over ne '') {
+            $text =~ s/ +/ /g; # compact whitespace
+            $carry_over .= $text;
+            next unless $carry_over =~ m|^  Using \[(.*)\]$|;
+            print STDERR (join($blank, $lineno, $carry_over), $endl, $endl) if $trace; # extra line break
+            $text = $carry_over;
+            $carry_over = '';
+        }
+# --
 
         ## Directory [Cedar10.1]<AIS>
         if ($text =~ m|^Directory \[(.*)\]<(.*)>$|) {
@@ -177,8 +185,10 @@ if ($carry_over ne '') {
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
-            $section = \%o;
-            push @sections, $section;
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
 
             next;
         }
@@ -194,15 +204,17 @@ if ($carry_over ne '') {
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
-            $section = \%o;
-            push @sections, $section;
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
 
             next;
         }
 
         ## Exports Imports [Cedar10.1]<Top>CedarDoc.df Of ~=
         if ($text =~ m|^Exports Imports \[(.*)\]<(.*)>(.*)\.df Of (.*)$|) {
-            my ($ifs_host, $path, $when) = ($1, $2, $3);
+            my ($ifs_host, $path, $module, $when) = ($1, $2, $3, $4);
 
             print STDERR (join($blank, $lineno, 'relay', $ifs_host, $path, $when), $endl) if $trace;
             ## build a 'relay' object here
@@ -211,29 +223,35 @@ if ($carry_over ne '') {
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
+            $o{module} = $module;
             $o{when} = $when;
-            $section = \%o;
-            push @sections, $section;
-# FIXME : add to backlog queue
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
+# FIXME : add $module to backlog queue
 
             next;
         }
 
         ## Include [Cedar10.1]<Top>CedarDoc.df Of ~=
         if ($text =~ m|^Include \[(.*)\]<(.*)>(.*)\.df Of (.*)$|) {
-            my ($ifs_host, $path, $when) = ($1, $2, $3);
+            my ($ifs_host, $path, $module, $when) = ($1, $2, $3, $4);
 
-            print STDERR (join($blank, $lineno, 'include', $ifs_host, $path, $when), $endl) if $trace;
+            print STDERR (join($blank, $lineno, 'include', $ifs_host, $path, $module, $when), $endl) if $trace;
             ## build a 'include' object here
             my %o;
             $o{flavor} = 'include';
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
+            $o{module} = $module;
             $o{when} = $when;
-            $section = \%o;
-            push @sections, $section;
-# FIXME : add to backlog queue
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
+# FIXME : add $module to backlog queue
 
             next;
         }
@@ -248,26 +266,32 @@ if ($carry_over ne '') {
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
-            $section = \%o;
-            push @sections, $section;
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
 
             next;
         }
 
         ## Imports [Cedar10.1]<Top>AIS.df Of >
         if ($text =~ m|^Imports \[(.*)\]<(.*)>(.*)\.df Of (.*)$|) {
-            my ($ifs_host, $path, $when) = ($1, $2, $3);
-            print STDERR (join($blank, $lineno, 'import', $ifs_host, $path, $when), $endl) if $trace;
-            ## build a 'import' object here
+            my ($ifs_host, $path, $module, $when) = ($1, $2, $3, $4);
+            print STDERR (join($blank, $lineno, 'import', $ifs_host, $path, $module, $when), $endl) if $trace;
+            ## build an 'import' object here
             my %o;
             $o{flavor} = 'import';
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
+            $o{module} = $module;
             $o{when} = $when;
-            $section = \%o;
-            push @sections, $section;
-# FIXME : add to backlog queue
+
+            my $oref = \%o;
+            push @sections, $oref;
+            $pending_section = $oref;
+# FIXME : only 1 import object ??
+# FIXME : add $module to backlog queue
 
             next;
         }
@@ -285,12 +309,15 @@ if ($carry_over ne '') {
             $o{flavor} = 'restrict';
             $o{lineno} = $lineno;
             $o{things} = \@things;
+# FIXME : only 1 restrict thing
 ## FIXME : would it be ok to have multiple 'Using' clauses ??
-            $section->{restrict} = \%o;
+
+            my $oref = \%o;
+            $pending_section->{restrict} = $oref;
 
 ## unclear if name parsing belongs here??
-            foreach my $xxx (@things) {
-                parse_vname($xxx);
+            foreach my $one (@things) {
+                parse_vname($one);
             }
 
             next;
@@ -299,7 +326,7 @@ if ($carry_over ne '') {
         ## +AbortLockTest.mesa!1                         23-May-91 15:21:58 PDT
         if ($text =~ m|^\s*(\S*) \s*(\S.*) (\S.*) (\S.*)$|) {
             my ($vname, $cal, $time, $tz) = ($1, $2, $3, $4);
-            # print STDERR (join($blank, $lineno, $section->{flavor}, 'item', $vname, $cal, $time, $tz), $endl) if $trace;
+            # print STDERR (join($blank, $lineno, $pending_section->{flavor}, 'item', $vname, $cal, $time, $tz), $endl) if $trace;
             my $when = join($blank, $cal, $time, $tz_map{$tz});
 
             # build an 'entity' item here:
@@ -312,35 +339,42 @@ if ($carry_over ne '') {
             my $t = Time::Piece->strptime($when, $basictime_fmt);
             my $epoch = $t->epoch; # note this is unix epoch, not a BasicTime
             my $basic_time = $epoch + $bt_adjust;
-            print STDERR (join($blank, $lineno, $section->{flavor}, 'item', $vname, $basic_time, $epoch, $when), $endl) if $trace;
+            print STDERR (join($blank, $lineno, $pending_section->{flavor}, 'item', $vname, $basic_time, $epoch, $when), $endl) if $trace;
             $o{epoch} = $epoch;
             $o{basic_time} = $basic_time;
 
 ## FIXME : is this the best way to organize the tree?
             ## ensure a list exists :
-            $section->{elist} //= [];
-            push @{ $section->{elist} }, \%o;
+            $pending_section->{elist} //= [];
+            push @{ $pending_section->{elist} }, \%o;
 
 
 ## FIXME : parse name here, or later ??
 my $parts = parse_vname($vname);
 
-            next if $section->{flavor} eq 'dir';
-            next if $section->{flavor} eq 'export';
+            next if $pending_section->{flavor} eq 'dir';
+            next if $pending_section->{flavor} eq 'export';
         }
+
+# --
+
+print STDERR (join($blank, $lineno, 'bj zz'), $endl); ## bj
+
 
 ## FIXME - some syntax I don't know about :
 ## or is malformed in some way ??
 
         # how did this get through ??
-        if (($section->{flavor} eq 'readonly') and (length($text) == 47) and ($text =~ m|^  (\S*)|)) {
+        if (($pending_section->{flavor} eq 'readonly') and (length($text) == 47) and ($text =~ m|^  (\S*)|)) {
             my $vname = $1;
-            print STDERR (join($blank, $lineno, $section->{flavor}, 'raw', $dquot.$vname.$dquot, length($text)), $endl); # if $trace;
+            print STDERR (join($blank, $lineno, $pending_section->{flavor}, 'raw', $dquot.$vname.$dquot, length($text)), $endl); # if $trace;
             next;
         }
 
-        print STDERR (join($blank, $lineno, $section->{flavor}, $dquot.$text.$dquot, length($text)), $endl); # if $unknown;
+        print STDERR (join($blank, $lineno, $pending_section->{flavor}, $dquot.$text.$dquot, length($text)), $endl); # if $unknown;
     }
+
+    print STDERR (join(' ', $pathname, 'lines:', $#lines+1), $endl) if $debug or $trace;
 
     $tree{sections} = \@sections;
     my $o = \%tree;
@@ -351,11 +385,11 @@ my $parts = parse_vname($vname);
 my $densejson = 0;
 sub genout {
     my ($adf) = @_;
-    my $project = $adf->{goid};
+    my $module = $adf->{goid};
     my $doclet = encode_json($adf);
     my $cmd = 'python3 -mjson.tool';
     $cmd = 'cat' if $densejson;
-    my $openspec = '|'.$cmd.'>'.$project.'.adf';
+    my $openspec = '|'.$cmd.'>'.$module.'.adf';
     print STDERR (join($blank, 'generating:', $openspec), $endl); # if $debug;
     open(FD, $openspec) or die $cmd.': '.$!;
     print FD $doclet;
@@ -377,6 +411,7 @@ foreach my $opt (@ARGV) {
     }
 
     my $adf = parse_df($opt);
+
     genout($adf);
 }
 
