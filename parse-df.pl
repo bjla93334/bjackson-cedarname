@@ -62,14 +62,44 @@ my $vname_sepr = '.!>+';
 # IsDelim(c) ((c) == '[' || (c) == ']' || (c) == '<' || (c) == '>' || (c) == '/')
 
 # +sub>base.ext!version
+## local namespace file
 sub parse_vname {
     my ($vname) = @_;
-    my $t1 = $vname; $t1 =~ s|^\+||;
-    my @comps = split(/[\[\]<>\/!]+/, $t1);
-    @comps = grep { $_ ne '' } @comps; # remove empty (back-to-back delim)
-    my $parts = join('/', @comps); # ref
-    ## print STDERR (join($blank, $parts, @comps, 'vname', $vname), $endl) if $debug;
-    return $parts;
+
+    # remove 'generated' marker
+    my $has_plus = ($vname =~ m|\+|);
+    $vname =~ s|^\+||;
+
+    my $last_delim = rindex($vname, '>');
+    my ($subpath, $simple) = ('', $vname);
+
+    if ($last_delim != -1) {
+        $subpath = substr($vname, 0, $last_delim);
+        $simple  = substr($vname, $last_delim + 1);
+    }
+
+    ## my @subpath = split('>', $vname);
+    ## my $plain = pop @subpath;
+
+    my ($plain, $v) = split(/!/, $simple, 2);
+    $v //= '';
+
+    # special case for dot-file(s)
+    my ($base, $ext) = ($plain, '');
+    if (($plain =~ m/\./) and (substr($plain, 0) ne '.')) {
+        ($base, $ext) = split(/\./, $plain, 2);
+        $ext //= '';
+    }
+
+    my %obj;
+    $obj{has_plus} = $has_plus;
+    $obj{subpath} = $subpath; # may contain internal '>'s
+    $obj{version} = $v;
+    $obj{base} = $base;
+    $obj{ext} = $ext;
+    print STDERR (join($blank, 'local-file', $ext, $base, $v, $subpath, ($has_plus) ? '+' : ''), $endl) if $debug;
+
+    return \%obj;
 }
 
 my %smodel; # map from DF name to abstract object
@@ -315,9 +345,11 @@ my $carry_over = '';
             my $oref = \%o;
             $pending_section->{restrict} = $oref;
 
+            $o{using} = [];
 ## unclear if name parsing belongs here??
             foreach my $one (@things) {
-                parse_vname($one);
+                my $fo = parse_vname($one);
+                push @{ $o{files }}, $fo;
             }
 
             next;
@@ -343,14 +375,13 @@ my $carry_over = '';
             $o{epoch} = $epoch;
             $o{basic_time} = $basic_time;
 
+            my $fo = parse_vname($vname);
+            $o{file} = $fo;
+
 ## FIXME : is this the best way to organize the tree?
             ## ensure a list exists :
             $pending_section->{elist} //= [];
             push @{ $pending_section->{elist} }, \%o;
-
-
-## FIXME : parse name here, or later ??
-my $parts = parse_vname($vname);
 
             next if $pending_section->{flavor} eq 'dir';
             next if $pending_section->{flavor} eq 'export';
@@ -427,5 +458,8 @@ my $notes = <<'_eof_';
         $user_cache{$id} //= create_user($id);
         return $user_cache{$id};
     }
+
+    my @comps =  split(/[\[\]<>\/!]+/, $t1);
+    @comps = grep { $_ ne '' } @comps; # remove empty (back-to-back delim)
 
 _eof_
