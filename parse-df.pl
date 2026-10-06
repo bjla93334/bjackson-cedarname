@@ -17,6 +17,7 @@ my $squot = "'";
 my $blank = ' ';
 my $slash = '/';
 my $endbrace = ']';
+my $dot = '.';
 
 # Unix / Epoch values :
 # 0 : Thursday, January 1, 1970 at 12:00:00 AM
@@ -55,6 +56,21 @@ my $cedar = $ENV{XeroxCedar};
 my %host;
 
 my %freq;
+
+# --
+# these could be recompiled at any time:
+
+# index of 'paths' by ifs_server
+my %ifs_index;
+
+# project graph, like smodel but import => (required-by) project
+my %project_graph;
+
+# local namespace (files) - file object table, f => fobj (vname)
+my %locals;
+
+
+# --
 
 # my $sepr = '.!>+-$_~?';
 my $vname_sepr = '.!>+';
@@ -97,12 +113,15 @@ sub parse_vname {
     $obj{version} = $v;
     $obj{base} = $base;
     $obj{ext} = $ext;
+    $obj{owner} = ''; # ensured defined, set in context
     print STDERR (join($blank, 'local-file', $ext, $base, $v, $subpath, ($has_plus) ? '+' : ''), $endl) if $debug;
 
     return \%obj;
 }
 
-my %smodel; # map from DF name to abstract object
+# table of abstract object : df (name) -> adf (obj)
+# constructs the "reachable set" of sub-projects and 'referenceable' files
+my %smodel;
 
 sub resolve_df {
     my ($given) = @_;
@@ -133,7 +152,8 @@ sub resolve_df {
         # $df{created} = $created;
         # $df{version} = $version;
         # $canon = ...;
-# [host]<path>module.df!vnum@mtime - path may include '>'
+
+        # [host]<path>module.df!vnum@mtime - path may include '>'
 
         return $smodel{$pathname}; # let's call this a df-ref
     }
@@ -170,6 +190,9 @@ sub parse_df {
     my %tree;
     ## $r->{tree} = \%tree; # do this at the end
     $r->{body} = \@lines;
+
+# FIXME:
+    my $active_df = $pathname; # 'module' name
 
     # active context:
     my $pending_section;
@@ -216,6 +239,9 @@ my $carry_over = '';
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
 
+            # path table
+            $ifs_index{$ifs_host} = $path;
+
             my $oref = \%o;
             push @sections, $oref;
             $pending_section = $oref;
@@ -223,7 +249,7 @@ my $carry_over = '';
             next;
         }
 
-        ## ReadOnly [project]<ubi>x>
+        ## ReadOnly [ifs-server]<ubi>x>
         if ($text =~ m|^ReadOnly \[(.*)\]<(.*)>$|) {
             my ($ifs_host, $path) = ($1, $2);
 
@@ -234,6 +260,9 @@ my $carry_over = '';
             $o{lineno} = $lineno;
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
+
+            # path table
+            $ifs_index{$ifs_host} = $path;
 
             my $oref = \%o;
             push @sections, $oref;
@@ -256,10 +285,19 @@ my $carry_over = '';
             $o{module} = $module;
             $o{when} = $when;
 
+            # path table
+            $ifs_index{$ifs_host} = $path;
+
+            # project graph
+            $project_graph{$module} = $active_df;
+
             my $oref = \%o;
             push @sections, $oref;
             $pending_section = $oref;
+
 # FIXME : add $module to backlog queue
+## backlog : 'relay', $oref;
+print STDERR (join($blank, 'BACKLOG', $lineno, 'relay', $ifs_host, $path, $when), $endl);
 
             next;
         }
@@ -278,10 +316,19 @@ my $carry_over = '';
             $o{module} = $module;
             $o{when} = $when;
 
+            # path table
+            $ifs_index{$ifs_host} = $path;
+
+            # project graph
+            $project_graph{$module} = $active_df;
+
             my $oref = \%o;
             push @sections, $oref;
             $pending_section = $oref;
+
 # FIXME : add $module to backlog queue
+## backlog : 'include', $oref;
+print STDERR (join($blank, 'BACKLOG', $lineno, 'include', $ifs_host, $path, $module, $when), $endl);
 
             next;
         }
@@ -297,6 +344,9 @@ my $carry_over = '';
             $o{ifs_host} = $ifs_host;
             $o{path} = $path;
 
+            # path table
+            $ifs_index{$ifs_host} = $path;
+
             my $oref = \%o;
             push @sections, $oref;
             $pending_section = $oref;
@@ -308,6 +358,7 @@ my $carry_over = '';
         if ($text =~ m|^Imports \[(.*)\]<(.*)>(.*)\.df Of (.*)$|) {
             my ($ifs_host, $path, $module, $when) = ($1, $2, $3, $4);
             print STDERR (join($blank, $lineno, 'import', $ifs_host, $path, $module, $when), $endl) if $trace;
+
             ## build an 'import' object here
             my %o;
             $o{flavor} = 'import';
@@ -317,11 +368,19 @@ my $carry_over = '';
             $o{module} = $module;
             $o{when} = $when;
 
+            # path table
+            $ifs_index{$ifs_host} = $path;
+
+            # project graph
+            $project_graph{$module} = $active_df;
+
             my $oref = \%o;
             push @sections, $oref;
             $pending_section = $oref;
-# FIXME : only 1 import object ??
+
 # FIXME : add $module to backlog queue
+## backlog : 'include', $oref;
+print STDERR (join($blank, 'BACKLOG', $lineno, 'import', $ifs_host, $path, $module, $when), $endl);
 
             next;
         }
@@ -339,17 +398,24 @@ my $carry_over = '';
             $o{flavor} = 'restrict';
             $o{lineno} = $lineno;
             $o{things} = \@things;
-# FIXME : only 1 restrict thing
 ## FIXME : would it be ok to have multiple 'Using' clauses ??
 
             my $oref = \%o;
             $pending_section->{restrict} = $oref;
+my $module;
 
             $o{using} = [];
 ## unclear if name parsing belongs here??
             foreach my $one (@things) {
                 my $fo = parse_vname($one);
-                push @{ $o{files }}, $fo;
+                push @{ $o{files}}, $fo;
+
+                # add to file table
+                my $lname = join($dot, $fo->{base}, $fo->{ext});
+                $locals{$lname} = $fo;
+                my $module = $pending_section->{module};
+                $fo->{owner} = $module;
+## FIXME : this strongly binds the meaning of a 'using' after a <section>
             }
 
             next;
@@ -377,6 +443,15 @@ my $carry_over = '';
 
             my $fo = parse_vname($vname);
             $o{file} = $fo;
+
+            # add to file table
+            my $lname = join($dot, $fo->{base}, $fo->{ext});
+            $locals{$lname} = $fo;
+            $fo->{owner} = $active_df;
+
+## FIXME : donno how 'readonly' plays here
+            my $pflav = $pending_section->{flavor}; # dir or readonly ??
+            print STDERR (join($blank, $lineno, 'readonly', $lname), $endl) if ($pflav eq 'readonly');
 
 ## FIXME : is this the best way to organize the tree?
             ## ensure a list exists :
@@ -416,11 +491,18 @@ print STDERR (join($blank, $lineno, 'bj zz'), $endl); ## bj
 my $densejson = 0;
 sub genout {
     my ($adf) = @_;
+
     my $module = $adf->{goid};
+    # for convenience:
+    $adf->{ifs_table} = \%ifs_index;
+    $adf->{pgraph} = \%project_graph;
+    $adf->{locals} = \%locals;
     my $doclet = encode_json($adf);
-    my $cmd = 'python3 -mjson.tool';
+
+    # my $cmd = 'python3 -mjson.tool';
+    my $cmd = 'jq -S .';
     $cmd = 'cat' if $densejson;
-    my $openspec = '|'.$cmd.'>'.$module.'.adf';
+    my $openspec = '|'.$cmd.' > '.$module.'.adf';
     print STDERR (join($blank, 'generating:', $openspec), $endl); # if $debug;
     open(FD, $openspec) or die $cmd.': '.$!;
     print FD $doclet;
