@@ -438,11 +438,22 @@ IO.UnsafePutBlock[st, [LOOPHOLE[@dMapEntry], 0, BYTES[DMapEntry]] ];
     If you don't, don't stress about it - work in progress
     In order for mjson to pretty print the doclet, you gotta 'fix' the JSON text
 
-    ./parse-df.pl --host:Cedar10.1=${XeroxCedar}/release /Cedar10.1/Top/Interpress.df >& /tmp/doclet.json
+    ./parse-df.pl --host:Cedar10.1=${XeroxCedar}/release /Cedar10.1/Top/Interpress.df
+
+    try --debug, and/or --trace
+
+# now built-in :
+
+    In order for mjson to pretty print the doclet, you gotta 'fix' the JSON text
+
+    parse-df.pl ... >& /tmp/doclet.json
     vim /tmp/doclet.json
     python3 -mjson.tool /tmp/doclet.json
 
-    try --debug, and/or --trace
+# cleaning up json text :
+
+    jq - Command-line JSON processor
+    -S --indent n
 
 # Understanding PFS Prefix Mapping
 
