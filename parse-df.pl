@@ -146,6 +146,11 @@ sub resolve_df {
         $df{pathname} = $pathname;
         $df{canon} = $canon;
         $df{goid} = $goid;
+
+        # module / project name
+        my $module = $rest[-1];
+        $module =~ s/\.df.*$//i;
+        $df{module} = $module;
 # FIXME
         $smodel{$pathname} = \%df; # ensure defined
         # $df{location} = $location;
@@ -192,7 +197,7 @@ sub parse_df {
     $r->{body} = \@lines;
 
 # FIXME:
-    my $active_df = $pathname; # 'module' name
+    my $active_df = $r->{module}; # 'module' name
 
     # active context:
     my $pending_section;
